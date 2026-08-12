@@ -1,0 +1,9 @@
+# Shell scripts must keep LF endings. A CRLF shebang fails on Linux with
+# "bad interpreter: /usr/bin/env bash^M", which is an obscure way for a
+# Render build to die.
+*.sh text eol=lf
+
+# Same reasoning for anything else the container executes or parses.
+Dockerfile text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf

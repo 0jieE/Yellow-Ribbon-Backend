@@ -1,0 +1,66 @@
+{% extends 'admin/base.html' %}
+
+{% load i18n unfold %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="yr-dashboard">
+
+    {# Headline numbers #}
+    <div class="yr-kpis">
+        {% for kpi in kpis %}
+            {% component "unfold/components/card.html" with href=kpi.href icon=kpi.icon footer=kpi.footer %}
+                {% component "unfold/components/text.html" %}{{ kpi.title }}{% endcomponent %}
+                {% component "unfold/components/title.html" %}{{ kpi.value }}{% endcomponent %}
+            {% endcomponent %}
+        {% endfor %}
+    </div>
+
+    {# Where every order stands right now, one click to the filtered list #}
+    {% component "unfold/components/card.html" with title="Orders by status" title_icon="stacked_bar_chart" %}
+        <div class="yr-chips">
+            {% for chip in status_chips %}
+                {% include "unfold/helpers/label.html" with text=chip.text variant=chip.variant href=chip.href %}
+            {% endfor %}
+        </div>
+    {% endcomponent %}
+
+    {# Things that need a human right now #}
+    <div class="yr-two">
+        {% component "unfold/components/card.html" with title="Awaiting confirmation" title_icon="hourglass_top" description=awaiting_desc %}
+            {% component "unfold/components/table.html" with table=awaiting_table card_included=1 %}{% endcomponent %}
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with title="Needs a rider" title_icon="two_wheeler" description=needs_rider_desc %}
+            {% component "unfold/components/table.html" with table=needs_rider_table card_included=1 %}{% endcomponent %}
+        {% endcomponent %}
+    </div>
+
+    {# Trend and what is selling #}
+    <div class="yr-two">
+        {% component "unfold/components/card.html" with title=chart_title title_icon="bar_chart" description="Delivered orders, by delivery date" %}
+            {% component "unfold/components/chart/bar.html" with data=revenue_chart height=300 %}{% endcomponent %}
+        {% endcomponent %}
+
+        <div class="yr-stack">
+            {% component "unfold/components/card.html" with title="Riders on duty" title_icon="sports_motorsports" %}
+                {% component "unfold/components/table.html" with table=riders_table card_included=1 %}{% endcomponent %}
+            {% endcomponent %}
+
+            {% component "unfold/components/card.html" with title=top_items_title title_icon="local_pizza" %}
+                {% component "unfold/components/table.html" with table=top_items_table card_included=1 %}{% endcomponent %}
+            {% endcomponent %}
+        </div>
+    </div>
+
+    {% component "unfold/components/card.html" with title="Latest orders" title_icon="receipt_long" %}
+        {% component "unfold/components/table.html" with table=recent_table card_included=1 %}{% endcomponent %}
+    {% endcomponent %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "admin/login.html" %}
+
+{% load static %}
+
+{# Same page as Unfold's, with the shop's logo above the title. #}
+{% block content %}
+    <img src="{% static 'core/img/logo.png' %}" alt="Yellow Ribbon Pizza" class="yr-login-logo">
+    {{ block.super }}
+{% endblock %}

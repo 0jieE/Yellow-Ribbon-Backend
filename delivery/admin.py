@@ -1,21 +1,31 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from unfold.admin import ModelAdmin
+from unfold.contrib.filters.admin import RangeDateFilter
+from unfold.decorators import display
+
+from core.admin_dashboard import DELIVERY_STATUS_LABELS
 
 from .models import Delivery
 
 
 @admin.register(Delivery)
-class DeliveryAdmin(admin.ModelAdmin):
+class DeliveryAdmin(ModelAdmin):
     list_display = (
         "order",
         "rider",
-        "status",
+        "status_badge",
         "rider_earnings",
         "has_proof",
         "assigned_at",
         "delivered_at",
     )
-    list_filter = ("status", "assigned_at", "rider__vehicle_type")
+    list_filter = (
+        "status",
+        ("assigned_at", RangeDateFilter),
+        "rider__vehicle_type",
+    )
+    list_filter_submit = True
     search_fields = (
         "order__order_number",
         "rider__user__username",
@@ -35,6 +45,10 @@ class DeliveryAdmin(admin.ModelAdmin):
         ("Proof of delivery", {"fields": ("proof_of_delivery", "proof_preview")}),
         ("Timeline", {"fields": ("assigned_at", "picked_up_at", "delivered_at")}),
     )
+
+    @display(description="status", ordering="status", label=DELIVERY_STATUS_LABELS)
+    def status_badge(self, obj):
+        return obj.get_status_display()
 
     @admin.display(description="proof", boolean=True)
     def has_proof(self, obj):

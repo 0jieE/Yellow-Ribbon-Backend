@@ -1,0 +1,60 @@
+/* Yellow Ribbon admin: layout for the dashboard on /admin/.
+   Unfold ships a precompiled Tailwind build, so only classes it already uses
+   exist there. These few are ours, written as plain CSS. */
+
+.yr-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.yr-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+}
+
+.yr-two {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    gap: 1.5rem;
+}
+
+.yr-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.yr-stack > * {
+    flex: 1 1 auto;
+}
+
+.yr-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.yr-chips a {
+    transition: opacity 0.15s;
+}
+
+.yr-chips a:hover {
+    opacity: 0.75;
+}
+
+/* Order numbers and timestamps read as one token; let the other columns wrap. */
+.yr-dashboard td a,
+.yr-dashboard td:last-child {
+    white-space: nowrap;
+}
+
+/* Logo above the sign-in form. */
+.yr-login-logo {
+    display: block;
+    width: 72px;
+    height: 72px;
+    margin: 0 0 1.5rem;
+    border-radius: 9999px;
+}

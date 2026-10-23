@@ -5,11 +5,14 @@ All environment-specific values come from `.env` (see `.env.example`).
 Nothing secret is hardcoded here.
 """
 
+import sys
 from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
 import environ
+
+from .unfold_settings import UNFOLD  # noqa: F401  (read by django-unfold)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -60,6 +63,10 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 
 INSTALLED_APPS = [
+    # Unfold has to come before django.contrib.admin: it overrides the admin
+    # templates, and Django takes the first match it finds.
+    "unfold",
+    "unfold.contrib.filters",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -99,7 +106,8 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Project-level overrides; templates/admin/index.html is the dashboard.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -140,6 +148,11 @@ DATABASES = {
 # ---------------------------------------------------------------------
 
 AUTH_USER_MODEL = "accounts.User"
+
+# Unfold's login form has no hidden `next` field, so signing in from a bare
+# /admin/login/ would fall through to Django's default, /accounts/profile/,
+# which does not exist. Only the admin uses session login; the apps use JWT.
+LOGIN_REDIRECT_URL = "admin:index"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -290,6 +303,15 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# The test runner forces DEBUG off, which makes every {% static %} look the
+# file up in a manifest that only `collectstatic` writes. A fresh clone has no
+# manifest, so every admin page would 500 in the tests. Plain storage needs
+# none; production and development keep the manifest storage above.
+if sys.argv[1:2] == ["test"]:
+    STORAGES["staticfiles"] = {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+    }
 
 
 # ---------------------------------------------------------------------

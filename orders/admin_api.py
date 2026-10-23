@@ -199,13 +199,13 @@ class AdminOrderViewSet(
         return self._fresh_response(order, http.HTTP_201_CREATED)
 
 
-@api_view(["GET"])
-@permission_classes([IsAdminUser])
-def dashboard(_request):
+def dashboard_summary():
     """
-    GET /api/admin/dashboard/ — counts and revenue for today.
+    Counts and revenue for today, as the plain dict the API returns.
 
-    "Today" is the local date in TIME_ZONE (Asia/Manila), not UTC.
+    Shared by GET /api/admin/dashboard/ and the dashboard on /admin/, so the
+    two can never disagree. "Today" is the local date in TIME_ZONE
+    (Asia/Manila), not UTC.
     """
     today = timezone.localdate()
 
@@ -237,31 +237,36 @@ def dashboard(_request):
         .count()
     )
 
-    return Response(
-        {
-            "date": today.isoformat(),
-            "today": {
-                "orders_placed": placed_today.count(),
-                "orders_delivered": delivered_today.count(),
-                "orders_cancelled": placed_today.filter(
-                    status=OrderStatus.CANCELLED
-                ).count(),
-                # Revenue is recognised on delivery, not on placement, so a
-                # pending order does not inflate the day's takings.
-                "revenue": str(money["gross"] or Decimal("0.00")),
-                "food_sales": str(money["food"] or Decimal("0.00")),
-                "delivery_fees": str(money["fees"] or Decimal("0.00")),
-            },
-            "status_counts": status_counts,
-            "active_orders": sum(
-                count
-                for s, count in status_counts.items()
-                if s not in (OrderStatus.DELIVERED, OrderStatus.CANCELLED)
-            ),
-            "riders": {
-                "total": rider_stats["total"],
-                "on_duty": rider_stats["on_duty"],
-                "on_delivery": on_delivery,
-            },
-        }
-    )
+    return {
+        "date": today.isoformat(),
+        "today": {
+            "orders_placed": placed_today.count(),
+            "orders_delivered": delivered_today.count(),
+            "orders_cancelled": placed_today.filter(
+                status=OrderStatus.CANCELLED
+            ).count(),
+            # Revenue is recognised on delivery, not on placement, so a
+            # pending order does not inflate the day's takings.
+            "revenue": str(money["gross"] or Decimal("0.00")),
+            "food_sales": str(money["food"] or Decimal("0.00")),
+            "delivery_fees": str(money["fees"] or Decimal("0.00")),
+        },
+        "status_counts": status_counts,
+        "active_orders": sum(
+            count
+            for s, count in status_counts.items()
+            if s not in (OrderStatus.DELIVERED, OrderStatus.CANCELLED)
+        ),
+        "riders": {
+            "total": rider_stats["total"],
+            "on_duty": rider_stats["on_duty"],
+            "on_delivery": on_delivery,
+        },
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def dashboard(_request):
+    """GET /api/admin/dashboard/ — counts and revenue for today."""
+    return Response(dashboard_summary())

@@ -3,15 +3,9 @@ from django.contrib.auth.models import UserManager as DjangoUserManager
 
 class UserManager(DjangoUserManager):
     """
-    Email is unique and required by the schema, so it is enforced here
-    rather than left to the serializer.
+    Email is optional. Django's own manager already stores a missing address
+    as "", which is what the conditional unique constraint on User expects.
     """
-
-    def _create_user(self, username, email, password, **extra_fields):
-        if not email:
-            raise ValueError("Users must have an email address.")
-        email = self.normalize_email(email)
-        return super()._create_user(username, email, password, **extra_fields)
 
     def create_superuser(self, username, email=None, password=None, **extra_fields):
         # `createsuperuser` is how admins are made (spec section 6), so the

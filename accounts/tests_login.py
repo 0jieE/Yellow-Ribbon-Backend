@@ -235,24 +235,24 @@ class EmailUniquenessTests(APITestCase):
         "password_confirm": PASSWORD,
     }
 
-    def test_email_is_required_on_the_model(self):
+    def test_email_is_optional_on_the_model(self):
+        # Optional now; uniqueness only applies to addresses that are set
+        # (see accounts/tests_optional_email.py for the full behaviour).
         field = User._meta.get_field("email")
-        self.assertFalse(field.blank)
+        self.assertTrue(field.blank)
         self.assertFalse(field.null)
-        self.assertTrue(field.unique)
 
-    def test_registration_requires_an_email(self):
+    def test_registration_does_not_require_an_email(self):
         body = {k: v for k, v in self.payload.items() if k != "email"}
         response = self.client.post(self.register_url, body, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("email", response.data["fields"])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-    def test_blank_email_rejected(self):
+    def test_blank_email_is_accepted(self):
         response = self.client.post(
             self.register_url, {**self.payload, "email": ""}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_duplicate_email_is_a_field_error_not_a_500(self):
         self.client.post(self.register_url, self.payload, format="json")

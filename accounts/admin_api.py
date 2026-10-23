@@ -101,7 +101,7 @@ class RiderCreateSerializer(serializers.Serializer):
     """
 
     username = serializers.CharField(max_length=150)
-    email = serializers.EmailField()
+    email = serializers.EmailField(required=False, allow_blank=True, default="")
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
     first_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
@@ -115,7 +115,8 @@ class RiderCreateSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
+        # Optional: only a real address has to be unique.
+        if value and User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("That email is already registered.")
         return value
 
@@ -163,7 +164,7 @@ class RiderUpdateSerializer(serializers.ModelSerializer):
     last_name = serializers.CharField(
         source="user.last_name", max_length=100, required=False, allow_blank=True
     )
-    email = serializers.EmailField(source="user.email", required=False)
+    email = serializers.EmailField(source="user.email", required=False, allow_blank=True)
     phone = serializers.CharField(
         source="user.phone", max_length=20, required=False, allow_blank=True
     )
@@ -180,6 +181,8 @@ class RiderUpdateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_email(self, value):
+        if not value:
+            return ""  # clearing it is allowed
         clash = User.objects.filter(email__iexact=value).exclude(
             pk=self.instance.user_id
         )

@@ -120,6 +120,9 @@ class MeSerializer(UserSerializer):
     customer = CustomerProfileSerializer(required=False)
 
     def validate_email(self, value):
+        # Blank clears it; only a real address has to be unique.
+        if not value:
+            return ""
         qs = User.objects.filter(email__iexact=value).exclude(pk=self.instance.pk)
         if qs.exists():
             raise serializers.ValidationError("That email is already in use.")
@@ -183,6 +186,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         ]
 
     def validate_email(self, value):
+        # Optional: absent or blank is fine, and many users may have none.
+        if not value:
+            return ""
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("That email is already registered.")
         return value

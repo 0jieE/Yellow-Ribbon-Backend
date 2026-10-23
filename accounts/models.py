@@ -7,6 +7,7 @@ yellow_ribbon_pizza_schema.txt. One user table, three role flags (RBAC).
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Q
 from django.db.models.functions import Lower
 
 from .managers import UserManager
@@ -15,8 +16,10 @@ from .managers import UserManager
 class User(AbstractUser):
     """AUTH_USER_MODEL. Role flags drive the DRF permission classes."""
 
-    # Schema: email is unique and not null (Django's default is neither).
-    email = models.EmailField("email address", max_length=254, unique=True)
+    # Optional: the apps sign in by username and never use the address. Blank
+    # is stored as "" (not NULL), so many users can have none; uniqueness is a
+    # constraint below that applies only to addresses that are actually set.
+    email = models.EmailField("email address", max_length=254, blank=True)
     first_name = models.CharField("first name", max_length=100, blank=True)
     last_name = models.CharField("last name", max_length=100, blank=True)
 
@@ -32,22 +35,23 @@ class User(AbstractUser):
 
     objects = UserManager()
 
-    REQUIRED_FIELDS = ["email"]
+    # createsuperuser asks for a username and password only.
+    REQUIRED_FIELDS = []
 
     class Meta:
         db_table = "users"
         verbose_name = "user"
         verbose_name_plural = "users"
         constraints = [
-            # `unique=True` on the field gives a case-*sensitive* index, so
-            # Bob@x.com and bob@x.com could both exist. Login accepts an email
-            # case-insensitively, and two accounts answering to the same
-            # address would make that lookup ambiguous. The serializers
-            # already check with iexact; this closes the paths that skip
-            # them — createsuperuser, a data import, or two registrations
-            # racing each other.
+            # Login accepts an email case-insensitively, so two accounts
+            # answering to the same address (Bob@x.com and bob@x.com) would
+            # make that lookup ambiguous. The serializers already check with
+            # iexact; this closes the paths that skip them — createsuperuser,
+            # a data import, or two registrations racing each other. Only
+            # addresses that are set count: any number of users may have none.
             models.UniqueConstraint(
                 Lower("email"),
+                condition=~Q(email=""),
                 name="uniq_user_email_ci",
             ),
         ]

@@ -108,7 +108,7 @@ class AdminOrderViewSet(
     def get_queryset(self):
         return (
             Order.objects.all()
-            .select_related("customer__user", "delivery__rider__user")
+            .select_related("customer__user", "delivery__rider__user", "invoice")
             .prefetch_related("items__menu", "status_logs__changed_by")
         )
 

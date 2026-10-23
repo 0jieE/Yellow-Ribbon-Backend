@@ -51,15 +51,23 @@ def _auth_header():
 
 
 def _post(url, payload):
+    return _send(requests.post, url, json=payload)
+
+
+def _get(url):
+    return _send(requests.get, url)
+
+
+def _send(call, url, **kwargs):
     try:
-        response = requests.post(
+        response = call(
             url,
-            json=payload,
             headers={
                 "Authorization": _auth_header(),
                 "Content-Type": "application/json",
             },
             timeout=settings.PAYMONGO_TIMEOUT_SECONDS,
+            **kwargs,
         )
     except requests.Timeout:
         logger.warning("PayMongo timed out calling %s.", url)
@@ -153,6 +161,22 @@ def create_gcash_source(order, success_url=None, failed_url=None):
         "checkout_url": checkout_url,
         "amount_centavos": centavos,
     }
+
+
+def retrieve_source_status(source_id):
+    """
+    Where a GCash source stands: pending, chargeable, paid, cancelled,
+    expired or failed.
+
+    Checkout asks before reusing a source. Tapping "Fail" on PayMongo's test
+    page fires no webhook we subscribe to, so this is the only way to learn
+    that a stored checkout link is dead.
+    """
+    body = _get(f"{SOURCES_URL}/{source_id}")
+    status = ((body.get("data") or {}).get("attributes") or {}).get("status")
+    if not status:
+        raise PayMongoError("PayMongo did not return the payment status.")
+    return status
 
 
 def create_payment_from_source(source_id, amount, description=""):

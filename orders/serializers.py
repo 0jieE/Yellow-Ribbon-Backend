@@ -49,6 +49,34 @@ class OrderStatusLogSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+def payment_summary(order):
+    """
+    The invoice behind an order, so both apps can show the PayMongo
+    reference that proves the webhook settled it.
+
+    None until an invoice exists: GCash issues one at checkout, COD at the
+    door. `paymongo_reference` is the source id (src_...) while a GCash
+    checkout is open and the payment id (pay_...) once it is settled.
+    """
+    invoice = getattr(order, "invoice", None)
+    if invoice is None:
+        return None
+
+    paid_at = invoice.paid_at
+    return {
+        "invoice_number": invoice.invoice_number,
+        "paymongo_reference": invoice.paymongo_payment_id,
+        "amount_paid": str(invoice.amount_paid),
+        "paid_at": (
+            serializers.DateTimeField().to_representation(paid_at)
+            if paid_at is not None
+            else None
+        ),
+        # Lets the apps label sandbox payments honestly in a demo.
+        "test_mode": settings.PAYMONGO_SECRET_KEY.startswith("sk_test_"),
+    }
+
+
 class OrderSerializer(serializers.ModelSerializer):
     """List / detail shape returned to the customer."""
 
@@ -58,6 +86,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source="is_cancellable_by_customer", read_only=True
     )
     rider_location = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -86,8 +115,12 @@ class OrderSerializer(serializers.ModelSerializer):
             "items",
             "status_logs",
             "rider_location",
+            "payment",
         ]
         read_only_fields = fields
+
+    def get_payment(self, obj):
+        return payment_summary(obj)
 
     def get_rider_location(self, obj):
         """

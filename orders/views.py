@@ -55,7 +55,7 @@ class OrderViewSet(
         return (
             Order.objects.filter(customer__user=self.request.user)
             .prefetch_related("items__menu", "status_logs__changed_by")
-            .select_related("customer", "delivery__rider__user")
+            .select_related("customer", "delivery__rider__user", "invoice")
         )
 
     @action(detail=True, methods=["post"])

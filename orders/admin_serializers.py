@@ -9,7 +9,11 @@ from accounts.models import Rider
 
 from .constants import OrderStatus, allowed_transitions
 from .models import Order
-from .serializers import OrderItemSerializer, OrderStatusLogSerializer
+from .serializers import (
+    OrderItemSerializer,
+    OrderStatusLogSerializer,
+    payment_summary,
+)
 
 
 class AdminOrderSerializer(serializers.ModelSerializer):
@@ -24,6 +28,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
     )
     next_statuses = serializers.SerializerMethodField()
     rider = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -52,10 +57,14 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "customer_phone",
             "next_statuses",
             "rider",
+            "payment",
             "items",
             "status_logs",
         ]
         read_only_fields = fields
+
+    def get_payment(self, obj):
+        return payment_summary(obj)
 
     def get_customer_name(self, obj):
         user = obj.customer.user

@@ -17,10 +17,15 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from core.permissions import IsCustomerUser
-from orders.constants import OrderStatus, PaymentType
+from orders.constants import OrderStatus, PaymentStatus, PaymentType
 from orders.models import Order
 
-from .gateway import PayMongoError, create_gcash_source, create_payment_from_source
+from .gateway import (
+    PayMongoError,
+    create_gcash_source,
+    create_payment_from_source,
+    retrieve_source_status,
+)
 from .models import Invoice
 from .services import issue_invoice, mark_payment_failed, settle_payment
 from .signature import verify_signature
@@ -82,17 +87,44 @@ def checkout(request):
             status=http.HTTP_400_BAD_REQUEST,
         )
     if existing is not None and existing.paymongo_checkout_url:
-        # Reuse the live source rather than billing a new one every tap.
-        return Response(
-            {
-                "order_id": order.pk,
-                "order_number": order.order_number,
-                "invoice_number": existing.invoice_number,
-                "amount": str(order.total),
-                "checkout_url": existing.paymongo_checkout_url,
-                "reused": True,
-            }
-        )
+        source_status = "pending"
+        if existing.paymongo_payment_id.startswith("src_"):
+            try:
+                source_status = retrieve_source_status(existing.paymongo_payment_id)
+            except PayMongoError as exc:
+                logger.warning(
+                    "Could not check the source for %s: %s", order.order_number, exc
+                )
+                return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
+
+        if source_status == "pending":
+            # Reuse the live source rather than billing a new one every tap.
+            return Response(
+                {
+                    "order_id": order.pk,
+                    "order_number": order.order_number,
+                    "invoice_number": existing.invoice_number,
+                    "amount": str(order.total),
+                    "checkout_url": existing.paymongo_checkout_url,
+                    "reused": True,
+                }
+            )
+
+        if source_status in ("chargeable", "paid"):
+            # Authorised already; the webhook is about to settle it. A second
+            # source here could charge the customer twice.
+            return Response(
+                {
+                    "error": (
+                        "Your GCash payment went through and is being "
+                        "confirmed. Refresh the order in a moment."
+                    )
+                },
+                status=http.HTTP_409_CONFLICT,
+            )
+
+        # cancelled / expired / failed: that link is dead. Fall through and
+        # issue a fresh source on the same invoice.
 
     # PayMongo needs http(s) redirect targets. When none are configured we
     # derive them from this request, so the URLs are correct whether the API
@@ -110,17 +142,24 @@ def checkout(request):
         logger.warning("Checkout failed for %s: %s", order.order_number, exc)
         return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
 
-    invoice, _ = issue_invoice(
+    invoice, created = issue_invoice(
         order,
         source_id=source["source_id"],
         checkout_url=source["checkout_url"],
     )
-    if not invoice.paymongo_checkout_url:
+    if not created:
+        # A retry: point the invoice at the new source so its webhook
+        # matches this order instead of arriving unmatched.
         invoice.paymongo_payment_id = source["source_id"]
         invoice.paymongo_checkout_url = source["checkout_url"]
         invoice.save(
             update_fields=["paymongo_payment_id", "paymongo_checkout_url"]
         )
+
+    if order.payment_status == PaymentStatus.FAILED:
+        # A fresh attempt, so the earlier failure no longer describes it.
+        order.payment_status = PaymentStatus.UNPAID
+        order.save(update_fields=["payment_status"])
 
     return Response(
         {

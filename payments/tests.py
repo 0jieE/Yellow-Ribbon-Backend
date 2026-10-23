@@ -221,8 +221,9 @@ class CheckoutTests(PaymentTestBase):
         self.assertEqual(self.order.status, OrderStatus.PENDING_PAYMENT)
         self.assertEqual(self.order.payment_status, PaymentStatus.UNPAID)
 
+    @patch("payments.views.retrieve_source_status", return_value="pending")
     @patch("payments.views.create_gcash_source")
-    def test_second_tap_reuses_the_same_source(self, source):
+    def test_second_tap_reuses_the_same_source(self, source, source_status):
         source.return_value = self.source_ok()
 
         self.client.force_authenticate(self.cust_user)
@@ -235,6 +236,69 @@ class CheckoutTests(PaymentTestBase):
         self.assertTrue(response.data["reused"])
         self.assertEqual(source.call_count, 1)
         self.assertEqual(Invoice.objects.count(), 1)
+        source_status.assert_called_once_with(SOURCE_ID)
+
+    @patch("payments.views.retrieve_source_status", return_value="cancelled")
+    @patch("payments.views.create_gcash_source")
+    def test_dead_source_is_replaced_on_retry(self, source, _status):
+        retry_url = "https://test-sources.paymongo.com/sources?id=src_retry"
+        source.side_effect = [
+            self.source_ok(),
+            {"source_id": "src_retry", "checkout_url": retry_url, "amount_centavos": 62800},
+        ]
+
+        self.client.force_authenticate(self.cust_user)
+        self.client.post(self.checkout_url, {"order_id": self.order.pk}, format="json")
+        self.order.payment_status = PaymentStatus.FAILED
+        self.order.save()
+        response = self.client.post(
+            self.checkout_url, {"order_id": self.order.pk}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.data["reused"])
+        self.assertEqual(response.data["checkout_url"], retry_url)
+
+        # Same invoice, now pointing at the new source so its webhook matches.
+        invoice = Invoice.objects.get(order=self.order)
+        self.assertEqual(Invoice.objects.count(), 1)
+        self.assertEqual(invoice.paymongo_payment_id, "src_retry")
+        self.assertEqual(invoice.paymongo_checkout_url, retry_url)
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.payment_status, PaymentStatus.UNPAID)
+        self.assertEqual(self.order.status, OrderStatus.PENDING_PAYMENT)
+
+    @patch("payments.views.retrieve_source_status", return_value="chargeable")
+    @patch("payments.views.create_gcash_source")
+    def test_authorised_source_is_not_replaced(self, source, _status):
+        source.return_value = self.source_ok()
+
+        self.client.force_authenticate(self.cust_user)
+        self.client.post(self.checkout_url, {"order_id": self.order.pk}, format="json")
+        response = self.client.post(
+            self.checkout_url, {"order_id": self.order.pk}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(source.call_count, 1)
+
+    @patch(
+        "payments.views.retrieve_source_status",
+        side_effect=PayMongoError("PayMongo is down."),
+    )
+    @patch("payments.views.create_gcash_source")
+    def test_status_check_failure_returns_502(self, source, _status):
+        source.return_value = self.source_ok()
+
+        self.client.force_authenticate(self.cust_user)
+        self.client.post(self.checkout_url, {"order_id": self.order.pk}, format="json")
+        response = self.client.post(
+            self.checkout_url, {"order_id": self.order.pk}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(source.call_count, 1)
 
     @patch("payments.views.create_gcash_source")
     def test_cod_order_rejected(self, source):
@@ -796,3 +860,79 @@ class RedirectPageTests(PaymentTestBase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn(b"not completed", response.content)
+
+
+@override_settings(
+    PAYMONGO_SECRET_KEY=SECRET_KEY, PAYMONGO_WEBHOOK_SECRET=WEBHOOK_SECRET
+)
+class OrderPaymentSummaryTests(PaymentTestBase):
+    """Both apps read the PayMongo reference off the order detail."""
+
+    def setUp(self):
+        super().setUp()
+        Invoice.objects.create(
+            order=self.order,
+            invoice_number="INV-T001",
+            paymongo_payment_id=SOURCE_ID,
+            paymongo_checkout_url=CHECKOUT_URL,
+        )
+
+    def customer_detail(self):
+        self.client.force_authenticate(self.cust_user)
+        return self.client.get(reverse("orders:order-detail", args=[self.order.pk]))
+
+    def test_open_checkout_shows_the_source_unpaid(self):
+        payment = self.customer_detail().data["payment"]
+
+        self.assertEqual(payment["invoice_number"], "INV-T001")
+        self.assertEqual(payment["paymongo_reference"], SOURCE_ID)
+        self.assertIsNone(payment["paid_at"])
+        self.assertTrue(payment["test_mode"])
+
+    def test_webhook_settlement_shows_the_payment_id(self):
+        self.post_event(event_body("payment.paid", payment_id=PAYMENT_ID))
+
+        payment = self.customer_detail().data["payment"]
+        self.assertEqual(payment["paymongo_reference"], PAYMENT_ID)
+        self.assertEqual(payment["amount_paid"], "628.00")
+        self.assertIsNotNone(payment["paid_at"])
+
+    def test_admin_detail_carries_the_same_payment(self):
+        self.post_event(event_body("payment.paid", payment_id=PAYMENT_ID))
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(reverse("admin-order-detail", args=[self.order.pk]))
+
+        self.assertEqual(response.data["payment"]["paymongo_reference"], PAYMENT_ID)
+
+    def test_order_without_invoice_has_no_payment(self):
+        cod = self.make_order(
+            payment_type=PaymentType.COD, status=OrderStatus.PENDING
+        )
+        self.client.force_authenticate(self.cust_user)
+        response = self.client.get(reverse("orders:order-detail", args=[cod.pk]))
+
+        self.assertIsNone(response.data["payment"])
+
+
+@override_settings(PAYMONGO_SECRET_KEY=SECRET_KEY)
+class SourceStatusGatewayTests(APITestCase):
+    source_response = GatewayTests.source_response
+
+    @patch("payments.gateway.requests.get")
+    def test_reads_the_source_status(self, get):
+        get.return_value = self.source_response(
+            body={"data": {"id": SOURCE_ID, "attributes": {"status": "cancelled"}}}
+        )
+        from payments.gateway import retrieve_source_status
+
+        self.assertEqual(retrieve_source_status(SOURCE_ID), "cancelled")
+        self.assertTrue(get.call_args.args[0].endswith(f"/sources/{SOURCE_ID}"))
+
+    @patch("payments.gateway.requests.get")
+    def test_missing_status_becomes_a_paymongo_error(self, get):
+        get.return_value = self.source_response(body={"data": {}})
+        from payments.gateway import retrieve_source_status
+
+        with self.assertRaises(PayMongoError):
+            retrieve_source_status(SOURCE_ID)

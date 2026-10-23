@@ -14,9 +14,14 @@
     {# Headline numbers #}
     <div class="yr-kpis">
         {% for kpi in kpis %}
-            {% component "unfold/components/card.html" with href=kpi.href icon=kpi.icon footer=kpi.footer %}
-                {% component "unfold/components/text.html" %}{{ kpi.title }}{% endcomponent %}
-                {% component "unfold/components/title.html" %}{{ kpi.value }}{% endcomponent %}
+            {% component "unfold/components/card.html" with href=kpi.href footer=kpi.footer %}
+                <div class="yr-kpi">
+                    <span class="material-symbols-outlined yr-kpi-icon">{{ kpi.icon }}</span>
+                    <div class="yr-kpi-text">
+                        {% component "unfold/components/text.html" %}{{ kpi.title }}{% endcomponent %}
+                        {% component "unfold/components/title.html" %}{{ kpi.value }}{% endcomponent %}
+                    </div>
+                </div>
             {% endcomponent %}
         {% endfor %}
     </div>

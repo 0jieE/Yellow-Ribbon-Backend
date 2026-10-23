@@ -58,3 +58,31 @@
     margin: 0 0 1.5rem;
     border-radius: 9999px;
 }
+
+/* Icon tile beside each headline number. Unfold's own card `icon` is a
+   watermark drawn half off the card's edge, which reads as a clipped icon. */
+.yr-kpi {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.yr-kpi-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    font-size: 28px;
+    color: var(--color-primary-700);
+    background: color-mix(in oklab, var(--color-primary-500) 18%, transparent);
+}
+
+.dark .yr-kpi-icon {
+    color: var(--color-primary-400);
+}
+
+.yr-kpi-text {
+    min-width: 0;
+}

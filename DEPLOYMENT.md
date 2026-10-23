@@ -182,6 +182,36 @@ run it manually from the Shell tab before a demo.
 
 ---
 
+## 9. Back up, and move to a new database
+
+Render's free Postgres is deleted after 30 days. Take a backup before then.
+
+**Back up.** Sign in to `/admin/` as a superuser and press **Back up now** on
+the dashboard (or **System → Database backup** in the sidebar), then
+**Download backup**. You get `yellowribbon-backup-<date>.json.gz`: every table
+in one file. It does not include uploaded photos (Cloudinary keeps those). It
+**does** include customer addresses, phone numbers and password hashes, so keep
+it private. `.gitignore` already stops it being committed.
+
+**Restore into the new database.** The free web service has no shell, so do
+this from your own computer:
+
+1. Create the new Render Postgres and copy its **External Database URL**.
+2. In your local `.env`, set `DATABASE_URL` to it, with `?sslmode=require` on the end.
+3. `python manage.py migrate`
+4. `python manage.py restore_backup path/to/yellowribbon-backup-<date>.json.gz`
+
+   If you already ran `createsuperuser` on the new database, add `--flush`: it
+   wipes the database first, and the admin comes back from the backup.
+5. Set the web service's `DATABASE_URL` to the new database and redeploy.
+6. Put your local `.env` back.
+
+Order and invoice numbers carry on from where they stopped (`restore_backup`
+resets their Postgres sequences). Restore with the same version of the code
+that made the backup.
+
+---
+
 ## Known gotchas
 
 **Free tier sleeps.** After 15 minutes idle the service spins down, and the
@@ -190,8 +220,8 @@ wake it. A PayMongo webhook arriving cold may time out — PayMongo retries,
 and settlement is idempotent, so it recovers, but the order will not flip
 to `pending` instantly.
 
-**Free Postgres expires** after 30 days. Note the date. Back up with
-`pg_dump` before it lapses.
+**Free Postgres expires** after 30 days. Note the date and download a backup
+from the admin before it lapses (section 9).
 
 **Static files are collected at build time.** Adding one later requires a
 redeploy, not just a file upload.

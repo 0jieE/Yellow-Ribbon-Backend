@@ -1,0 +1,50 @@
+{% extends 'admin/base.html' %}
+
+{% load i18n unfold %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="yr-dashboard">
+
+    {% component "unfold/components/card.html" with title="Download a backup" title_icon="backup" description="Every table in one file, ready to load into a new database" %}
+        <form method="post" class="yr-backup-form">
+            {% csrf_token %}
+            <p class="text-sm">
+                {{ total_rows }} rows across all tables are included. Photos are not:
+                with Cloudinary they are stored there and survive on their own.
+            </p>
+            {% component "unfold/components/button.html" with submit=1 variant="primary" icon="download" size="md" %}
+                Download backup
+            {% endcomponent %}
+        </form>
+        <p class="yr-backup-warning text-sm">
+            The file contains customer addresses and phone numbers and every
+            account's password hash. Keep it somewhere private and never commit it.
+        </p>
+    {% endcomponent %}
+
+    {% component "unfold/components/card.html" with title="Restoring into a new database" title_icon="restore" %}
+        <ol class="yr-steps text-sm">
+            <li>Create the new Render Postgres and copy its <strong>External Database URL</strong>.</li>
+            <li>On your computer, put it in <code>.env</code> as <code>DATABASE_URL</code> (add <code>?sslmode=require</code>).</li>
+            <li>Run <code>python manage.py migrate</code>.</li>
+            <li>Run <code>python manage.py restore_backup &lt;your-file&gt;.json.gz</code>. Add <code>--flush</code> if you already created an admin there by hand.</li>
+            <li>Point the web service's <code>DATABASE_URL</code> at the new database and redeploy.</li>
+        </ol>
+        <p class="text-sm">
+            Restore with the same version of the code that made the backup. Order and
+            invoice numbers carry on from where they stopped.
+        </p>
+    {% endcomponent %}
+
+    {% component "unfold/components/card.html" with title="What is in a backup" title_icon="table_rows" %}
+        {% component "unfold/components/table.html" with table=counts_table card_included=1 %}{% endcomponent %}
+    {% endcomponent %}
+
+</div>
+{% endblock %}

@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+
+# Database backups hold customer addresses, phone numbers and password hashes.
+yellowribbon-backup-*
+*.json.gz
 *firebase*.json
 *service-account*.json
 serviceAccountKey.json

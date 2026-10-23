@@ -139,6 +139,20 @@ UNFOLD = {
                 ],
             },
             {
+                "title": _("System"),
+                "separator": True,
+                "collapsible": False,
+                "items": [
+                    {
+                        "title": _("Database backup"),
+                        "icon": "backup",
+                        "link": reverse_lazy("backup"),
+                        # The file holds password hashes and customer data.
+                        "permission": lambda request: request.user.is_superuser,
+                    },
+                ],
+            },
+            {
                 "title": _("Records"),
                 "separator": True,
                 "collapsible": True,

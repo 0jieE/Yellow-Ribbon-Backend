@@ -13,6 +13,7 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 
 from accounts import views as account_views
+from core.admin_views import backup_view
 from orders import views as order_views
 
 
@@ -26,6 +27,8 @@ urlpatterns = [
     # shows the login form to anyone not signed in. Temporary (302) so a
     # browser never caches the redirect if the root gets a real page later.
     path("", RedirectView.as_view(pattern_name="admin:index", permanent=False)),
+    # Before admin.site.urls, which would otherwise claim everything under admin/.
+    path("admin/backup/", admin.site.admin_view(backup_view), name="backup"),
     path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
     path("api/auth/", include("accounts.urls")),

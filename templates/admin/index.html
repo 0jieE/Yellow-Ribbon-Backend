@@ -67,5 +67,17 @@
         {% component "unfold/components/table.html" with table=recent_table card_included=1 %}{% endcomponent %}
     {% endcomponent %}
 
+    {% if request.user.is_superuser %}
+        {% component "unfold/components/card.html" with title="Database backup" title_icon="backup" description="Render's free database is deleted after a month. Keep a copy." %}
+            <div class="yr-backup-form">
+                <p class="text-sm">Download every table as one file that can be loaded into a new database.</p>
+                {% url 'backup' as backup_url %}
+                {% component "unfold/components/button.html" with href=backup_url variant="primary" icon="backup" size="md" %}
+                    Back up now
+                {% endcomponent %}
+            </div>
+        {% endcomponent %}
+    {% endif %}
+
 </div>
 {% endblock %}

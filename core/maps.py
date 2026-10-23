@@ -145,7 +145,9 @@ def store_location():
     you to verify it against the real shop address), so there is one
     coordinate pair to keep correct rather than two.
     """
-    return (settings.SERVICE_AREA_CENTER_LAT, settings.SERVICE_AREA_CENTER_LNG)
+    from .models import StoreSettings
+
+    return StoreSettings.load().center
 
 
 def refresh_order_eta(order, origin=None, *, trigger=""):

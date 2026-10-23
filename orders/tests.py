@@ -220,8 +220,12 @@ class GeofenceOrderingTests(OrderTestBase):
         self.assertEqual(OrderItem.objects.count(), 0)
         self.assertEqual(OrderStatusLog.objects.count(), 0)
 
-    @override_settings(SERVICE_AREA_RADIUS_KM=200)
-    def test_radius_is_read_from_settings(self):
+    def test_radius_is_read_from_the_store_settings(self):
+        from core.models import StoreSettings
+
+        store = StoreSettings.load()
+        store.service_area_radius_km = 100
+        store.save()
         response = self.place(**OUT_OF_AREA)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 

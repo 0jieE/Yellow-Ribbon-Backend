@@ -144,6 +144,11 @@ UNFOLD = {
                 "collapsible": False,
                 "items": [
                     {
+                        "title": _("Store settings"),
+                        "icon": "storefront",
+                        "link": reverse_lazy("admin:core_storesettings_changelist"),
+                    },
+                    {
                         "title": _("Database backup"),
                         "icon": "backup",
                         "link": reverse_lazy("backup"),

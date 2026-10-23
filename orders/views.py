@@ -1,6 +1,7 @@
 """Customer-facing order endpoints (spec section 7)."""
 
-from django.conf import settings
+from decimal import Decimal, InvalidOperation
+
 from django.db import transaction
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -8,6 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import DevicePlatform
+from core.geofence import distance_from_service_center_km, is_within_service_area
+from core.models import StoreSettings
 from core.notifications import notify_order_cancelled_by_customer
 from core.permissions import IsCustomerUser
 
@@ -106,12 +109,44 @@ class OrderViewSet(
 
 
 @api_view(["GET"])
+@permission_classes([IsCustomerUser])
+def delivery_quote(request):
+    """
+    GET /api/orders/delivery-quote/?lat=..&lng=.. — the fee for an address.
+
+    Flat fees are the same everywhere, but with a per-km rate set the fee
+    depends on the address, and the checkout screen should show the real
+    figure before the customer places the order.
+    """
+    try:
+        lat = Decimal(request.query_params["lat"])
+        lng = Decimal(request.query_params["lng"])
+    except (KeyError, InvalidOperation):
+        return Response(
+            {"error": "lat and lng are required numbers."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    store = StoreSettings.load()
+    distance = distance_from_service_center_km(lat, lng, store)
+    return Response(
+        {
+            "delivery_fee": f"{store.delivery_fee_for(distance):.2f}",
+            "distance_km": round(distance, 2),
+            "within_service_area": is_within_service_area(lat, lng, store),
+            "mode": "per_km" if store.delivery_fee_per_km else "flat",
+        }
+    )
+
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def constants(_request):
     """
     GET /api/constants/ — one source of truth for all three Flutter apps
     (spec section 5).
     """
+    store = StoreSettings.load()
     return Response(
         {
             "order_status": ORDER_STATUS,
@@ -123,12 +158,12 @@ def constants(_request):
                 current: sorted(str(s) for s in allowed)
                 for current, allowed in ORDER_STATUS_TRANSITIONS.items()
             },
-            "delivery_fee": settings.DELIVERY_FEE,
+            "delivery_fee": f"{store.delivery_fee:.2f}",
             "service_area": {
-                "center_lat": settings.SERVICE_AREA_CENTER_LAT,
-                "center_lng": settings.SERVICE_AREA_CENTER_LNG,
-                "radius_km": settings.SERVICE_AREA_RADIUS_KM,
-                "city": "Kidapawan City",
+                "center_lat": store.center[0],
+                "center_lng": store.center[1],
+                "radius_km": store.radius_km,
+                "city": store.service_area_city,
             },
         }
     )

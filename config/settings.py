@@ -318,6 +318,10 @@ if sys.argv[1:2] == ["test"]:
 # Business rules
 # ---------------------------------------------------------------------
 
+# DELIVERY_FEE and SERVICE_AREA_* are only the *initial* values: core.StoreSettings
+# copies them into the database the first time it is read, and from then on
+# the admin edits them there (Django admin, or /api/admin/store-settings/).
+# Changing them in the environment afterwards has no effect.
 # Kept as strings so the app layer can build exact Decimals from them.
 DELIVERY_FEE = env("DELIVERY_FEE")
 

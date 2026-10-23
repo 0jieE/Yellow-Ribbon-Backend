@@ -1,13 +1,11 @@
 """
 Service-area enforcement (spec section 8, step 1).
 
-Kidapawan City only. Checked server-side on every order placement,
-before anything is created.
+Checked server-side on every order placement, before anything is created.
+The centre and radius are the admin's to change (core.StoreSettings).
 """
 
 import math
-
-from django.conf import settings
 
 EARTH_RADIUS_KM = 6371.0088
 
@@ -27,14 +25,16 @@ def haversine_km(lat1, lng1, lat2, lng2):
     return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 
-def distance_from_service_center_km(lat, lng):
-    return haversine_km(
-        settings.SERVICE_AREA_CENTER_LAT,
-        settings.SERVICE_AREA_CENTER_LNG,
-        lat,
-        lng,
-    )
+def distance_from_service_center_km(lat, lng, store=None):
+    from .models import StoreSettings
+
+    store = store or StoreSettings.load()
+    center_lat, center_lng = store.center
+    return haversine_km(center_lat, center_lng, lat, lng)
 
 
-def is_within_service_area(lat, lng):
-    return distance_from_service_center_km(lat, lng) <= settings.SERVICE_AREA_RADIUS_KM
+def is_within_service_area(lat, lng, store=None):
+    from .models import StoreSettings
+
+    store = store or StoreSettings.load()
+    return distance_from_service_center_km(lat, lng, store) <= store.radius_km

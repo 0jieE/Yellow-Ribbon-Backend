@@ -7,6 +7,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from core.geofence import distance_from_service_center_km, is_within_service_area
+from core.models import StoreSettings
 from core.notifications import notify_new_order
 from menu.models import Menu
 
@@ -176,13 +177,14 @@ class OrderCreateSerializer(serializers.Serializer):
     def _check_service_area(self, attrs):
         lat = attrs["delivery_latitude"]
         lng = attrs["delivery_longitude"]
+        store = StoreSettings.load()
 
-        if not is_within_service_area(lat, lng):
-            distance = distance_from_service_center_km(lat, lng)
+        if not is_within_service_area(lat, lng, store):
+            distance = distance_from_service_center_km(lat, lng, store)
             raise serializers.ValidationError(
-                "We only deliver within {:g} km of Kidapawan City. That address "
+                "We only deliver within {:g} km of {}. That address "
                 "is about {:.1f} km away.".format(
-                    settings.SERVICE_AREA_RADIUS_KM, distance
+                    store.radius_km, store.service_area_city, distance
                 )
             )
 
@@ -239,7 +241,14 @@ class OrderCreateSerializer(serializers.Serializer):
 
         # step 3: totals computed server-side.
         subtotal = sum((line["line_subtotal"] for line in lines), Decimal("0.00"))
-        delivery_fee = Decimal(settings.DELIVERY_FEE)
+        store = StoreSettings.load()
+        delivery_fee = store.delivery_fee_for(
+            distance_from_service_center_km(
+                validated_data["delivery_latitude"],
+                validated_data["delivery_longitude"],
+                store,
+            )
+        )
         total = subtotal + delivery_fee
 
         # step 5: an unpaid GCash order must not reach the kitchen.

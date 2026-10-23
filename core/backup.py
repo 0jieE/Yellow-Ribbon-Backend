@@ -91,7 +91,13 @@ def build_backup():
 
 
 def database_is_empty():
-    return not any(model.objects.exists() for model in _backed_up_models())
+    # StoreSettings creates itself on first read, so a database that has only
+    # ever served a request still counts as empty.
+    return not any(
+        model.objects.exists()
+        for model in _backed_up_models()
+        if model._meta.label_lower != "core.storesettings"
+    )
 
 
 def _trailing_number(value):

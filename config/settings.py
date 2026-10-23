@@ -29,6 +29,10 @@ env = environ.Env(
     GOOGLE_MAPS_SERVER_KEY=(str, ""),
     GOOGLE_ROUTES_TIMEOUT_SECONDS=(float, 5.0),
     GOOGLE_ROUTES_TRAVEL_MODE=(str, "TWO_WHEELER"),
+    MAYA_PUBLIC_KEY=(str, ""),
+    MAYA_SECRET_KEY=(str, ""),
+    MAYA_BASE_URL=(str, "https://pg-sandbox.paymaya.com"),
+    MAYA_TIMEOUT_SECONDS=(float, 15.0),
     PAYMONGO_PUBLIC_KEY=(str, ""),
     PAYMONGO_SECRET_KEY=(str, ""),
     PAYMONGO_WEBHOOK_SECRET=(str, ""),
@@ -351,6 +355,14 @@ GOOGLE_ROUTES_TIMEOUT_SECONDS = env("GOOGLE_ROUTES_TIMEOUT_SECONDS")
 # TWO_WHEELER suits motorcycle delivery and is supported in the Philippines.
 # Switch to DRIVE if the Routes API ever refuses it for this region.
 GOOGLE_ROUTES_TRAVEL_MODE = env("GOOGLE_ROUTES_TRAVEL_MODE")
+
+# Maya Checkout. The sandbox keys are public and shared by every developer, so
+# there is no webhook: payments are verified by looking them up (payments/maya.py).
+# Production is https://pg.paymaya.com with the merchant's own keys.
+MAYA_PUBLIC_KEY = env("MAYA_PUBLIC_KEY")
+MAYA_SECRET_KEY = env("MAYA_SECRET_KEY")
+MAYA_BASE_URL = env("MAYA_BASE_URL")
+MAYA_TIMEOUT_SECONDS = env("MAYA_TIMEOUT_SECONDS")
 
 PAYMONGO_PUBLIC_KEY = env("PAYMONGO_PUBLIC_KEY")
 PAYMONGO_SECRET_KEY = env("PAYMONGO_SECRET_KEY")

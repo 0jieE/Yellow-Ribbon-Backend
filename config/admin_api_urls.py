@@ -12,6 +12,7 @@ from accounts.admin_api import AdminRiderViewSet
 from core.store_api import store_settings
 from orders.admin_api import AdminOrderViewSet, dashboard
 from orders.reports import menu_report, riders_report, sales_report
+from payments.reports import payments_report, payments_transactions
 
 router = DefaultRouter()
 router.register(r"orders", AdminOrderViewSet, basename="admin-order")
@@ -24,5 +25,11 @@ urlpatterns = [
     path("reports/sales/", sales_report, name="admin-report-sales"),
     path("reports/riders/", riders_report, name="admin-report-riders"),
     path("reports/menu/", menu_report, name="admin-report-menu"),
+    path("reports/payments/", payments_report, name="admin-report-payments"),
+    path(
+        "reports/payments/transactions/",
+        payments_transactions,
+        name="admin-report-payment-transactions",
+    ),
     path("", include(router.urls)),
 ]

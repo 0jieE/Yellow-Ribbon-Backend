@@ -21,6 +21,19 @@ from menu.models import Menu
 LOCAL_APPS = {"accounts", "menu", "orders", "delivery", "payments", "core"}
 
 
+def listed_admins():
+    """(model, admin) for every local model that has a changelist of its own.
+
+    A singleton such as StoreSettings is edited in place: its list redirects to
+    the one row, so list_display, search and filters do not apply to it.
+    """
+    return [
+        (model, site_admin)
+        for model, site_admin in admin.site._registry.items()
+        if model._meta.app_label in LOCAL_APPS and not getattr(site_admin, "is_singleton", False)
+    ]
+
+
 class AdminRegistrationTests(TestCase):
     """Section 13: every model registered — the admin is the demo fallback."""
 
@@ -52,25 +65,19 @@ class AdminRegistrationTests(TestCase):
             self.assertIn(name, registered, f"{name} is missing from the admin")
 
     def test_every_admin_has_a_list_display(self):
-        for model, site_admin in admin.site._registry.items():
-            if model._meta.app_label not in LOCAL_APPS:
-                continue
+        for model, site_admin in listed_admins():
             self.assertGreaterEqual(
                 len(site_admin.list_display), 2, f"{model.__name__} list_display"
             )
 
     def test_every_admin_has_search_fields(self):
-        for model, site_admin in admin.site._registry.items():
-            if model._meta.app_label not in LOCAL_APPS:
-                continue
+        for model, site_admin in listed_admins():
             self.assertTrue(
                 site_admin.search_fields, f"{model.__name__} has no search_fields"
             )
 
     def test_every_admin_has_filters(self):
-        for model, site_admin in admin.site._registry.items():
-            if model._meta.app_label not in LOCAL_APPS:
-                continue
+        for model, site_admin in listed_admins():
             self.assertTrue(
                 site_admin.list_filter, f"{model.__name__} has no list_filter"
             )
@@ -92,9 +99,7 @@ class AdminPageTests(APITestCase):
         self.assertEqual(self.client.get(reverse("admin:index")).status_code, 200)
 
     def test_every_changelist_loads(self):
-        for model in admin.site._registry:
-            if model._meta.app_label not in LOCAL_APPS:
-                continue
+        for model, _ in listed_admins():
             url = reverse(
                 f"admin:{model._meta.app_label}_{model._meta.model_name}_changelist"
             )
@@ -102,9 +107,7 @@ class AdminPageTests(APITestCase):
             self.assertEqual(response.status_code, 200, f"{url} returned {response.status_code}")
 
     def test_changelists_survive_a_search(self):
-        for model in admin.site._registry:
-            if model._meta.app_label not in LOCAL_APPS:
-                continue
+        for model, _ in listed_admins():
             url = reverse(
                 f"admin:{model._meta.app_label}_{model._meta.model_name}_changelist"
             )

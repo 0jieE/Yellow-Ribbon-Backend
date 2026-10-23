@@ -30,6 +30,7 @@ class DeliveryStatus(models.TextChoices):
 class PaymentType(models.TextChoices):
     COD = "cod", "Cash on delivery"
     GCASH = "gcash", "GCash"
+    MAYA = "maya", "Maya"
 
 
 class PaymentStatus(models.TextChoices):

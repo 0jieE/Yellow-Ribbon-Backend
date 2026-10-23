@@ -64,7 +64,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_payment(self, obj):
-        return payment_summary(obj)
+        return payment_summary(obj, for_admin=True)
 
     def get_customer_name(self, obj):
         user = obj.customer.user

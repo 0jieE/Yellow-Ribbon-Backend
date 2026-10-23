@@ -108,14 +108,22 @@ disk, where they will not survive a deploy. Set all three.
 | `PAYMONGO_PUBLIC_KEY` | |
 | `PAYMONGO_SECRET_KEY` | |
 | `PAYMONGO_WEBHOOK_SECRET` | Regenerate after step 6 — the webhook URL changes |
+| `MAYA_PUBLIC_KEY` / `MAYA_SECRET_KEY` | Optional: leave blank and Maya checkout answers "not configured". For the sandbox, use the shared public keys on developers.maya.ph ("Sandbox Party 1"). They are shared with every developer, so never register a webhook on them. |
+| `MAYA_BASE_URL` | `https://pg-sandbox.paymaya.com` (the default). Production is `https://pg.paymaya.com`, with your own keys. |
 | `FIREBASE_CREDENTIALS_JSON` | The whole service-account JSON **on one line**. Do not use `FIREBASE_CREDENTIALS_PATH` — there is no file to point at. |
 
 ### Business rules (optional; defaults shown in `.env.example`)
 
-`DELIVERY_FEE`, `RIDER_EARNINGS_PER_DELIVERY`,
-`PENDING_PAYMENT_TIMEOUT_MINUTES`, `SERVICE_AREA_CENTER_LAT`,
-`SERVICE_AREA_CENTER_LNG`, `SERVICE_AREA_RADIUS_KM`,
+`RIDER_EARNINGS_PER_DELIVERY`, `PENDING_PAYMENT_TIMEOUT_MINUTES`,
 `GOOGLE_ROUTES_TRAVEL_MODE`, `CORS_ALLOWED_ORIGINS`
+
+`DELIVERY_FEE` and `SERVICE_AREA_CENTER_LAT` / `_LNG` / `_RADIUS_KM` only give
+the **first** values: they are copied into the database the first time the app
+reads them, and from then on the store admin changes them in the Django admin
+(**System → Store settings**) or through `/api/admin/store-settings/`.
+Editing them in Render afterwards does nothing. The same page holds the
+PayMongo and Maya fee rates the payments report uses; the defaults (2.5 % and
+1.5 %) are placeholders, so set your real contract rates.
 
 ### Deliberately left unset
 
@@ -169,8 +177,10 @@ Replace the `trycloudflare` URL with
 
 ## 8. Schedule the stale-order reaper
 
-`cancel_stale_orders` cancels GCash orders that were never paid for. It is
-not automatic.
+`cancel_stale_orders` cancels online orders that were never paid for. It is
+not automatic. It also matters more with Maya: there is no Maya webhook, so a
+customer who pays and then closes the app is only found out when the app syncs
+or when this job asks Maya (it does, before cancelling any Maya order).
 
 Render → **New** → **Cron Job**, same repo and region:
 

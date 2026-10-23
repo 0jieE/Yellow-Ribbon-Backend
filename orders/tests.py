@@ -476,7 +476,7 @@ class ConstantsEndpointTests(OrderTestBase):
         data = self.client.get(self.url).data
 
         self.assertEqual(data["order_status"], ORDER_STATUS)
-        self.assertEqual(data["payment_type"], ["cod", "gcash"])
+        self.assertEqual(data["payment_type"], ["cod", "gcash", "maya"])
         self.assertEqual(data["delivery_fee"], "30.00")
         self.assertEqual(data["service_area"]["radius_km"], 8.0)
         self.assertIn("center_lat", data["service_area"])

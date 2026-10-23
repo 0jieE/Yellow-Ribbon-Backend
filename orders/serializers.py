@@ -50,32 +50,68 @@ class OrderStatusLogSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-def payment_summary(order):
-    """
-    The invoice behind an order, so both apps can show the PayMongo
-    reference that proves the webhook settled it.
+def _iso(value):
+    return serializers.DateTimeField().to_representation(value) if value is not None else None
 
-    None until an invoice exists: GCash issues one at checkout, COD at the
-    door. `paymongo_reference` is the source id (src_...) while a GCash
-    checkout is open and the payment id (pay_...) once it is settled.
+
+def _test_mode(provider):
+    """Lets the apps label sandbox payments honestly in a demo."""
+    if provider == "maya":
+        return "sandbox" in settings.MAYA_BASE_URL
+    if provider == "cod":
+        return False
+    # PayMongo, and invoices from before `provider` existed (always PayMongo or COD).
+    return settings.PAYMONGO_SECRET_KEY.startswith("sk_test_")
+
+
+def refund_summary(invoice, *, for_admin=False):
+    """The refund on an invoice, or None when it never had one."""
+    if not invoice.refund_status:
+        return None
+    summary = {
+        "status": invoice.refund_status,
+        "amount": str(invoice.refund_amount) if invoice.refund_amount is not None else None,
+        "refunded_at": _iso(invoice.refunded_at),
+        "reference": invoice.refund_reference or None,
+    }
+    if for_admin:
+        # Why a refund failed is for the shop to act on, not for the customer.
+        summary["error"] = invoice.refund_error or None
+    return summary
+
+
+def payment_summary(order, *, for_admin=False):
+    """
+    The invoice behind an order, so the apps can show the gateway reference
+    that proves a payment was settled, who paid, and any refund.
+
+    None until an invoice exists: online orders get one at checkout, COD at
+    the door. `paymongo_reference` is the gateway's reference whichever the
+    provider (the name is historical): for GCash the source id (src_...) while
+    checkout is open and the payment id (pay_...) once settled; for Maya the
+    checkout id, then the payment id.
+
+    The gateway fee and what the store nets are the shop's own figures, so
+    they are added only for `for_admin`.
     """
     invoice = getattr(order, "invoice", None)
     if invoice is None:
         return None
 
-    paid_at = invoice.paid_at
-    return {
+    summary = {
         "invoice_number": invoice.invoice_number,
         "paymongo_reference": invoice.paymongo_payment_id,
         "amount_paid": str(invoice.amount_paid),
-        "paid_at": (
-            serializers.DateTimeField().to_representation(paid_at)
-            if paid_at is not None
-            else None
-        ),
-        # Lets the apps label sandbox payments honestly in a demo.
-        "test_mode": settings.PAYMONGO_SECRET_KEY.startswith("sk_test_"),
+        "paid_at": _iso(invoice.paid_at),
+        "test_mode": _test_mode(invoice.provider),
+        "provider": invoice.provider or None,
+        "payer": invoice.payer or None,
+        "refund": refund_summary(invoice, for_admin=for_admin),
     }
+    if for_admin:
+        summary["fee"] = str(invoice.fee)
+        summary["net_amount"] = str(invoice.net_amount)
+    return summary
 
 
 class OrderSerializer(serializers.ModelSerializer):

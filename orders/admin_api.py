@@ -88,6 +88,13 @@ def apply_status_change(order, new_status, changed_by, reason="", notify_custome
     if new_status == OrderStatus.CANCELLED:
         _notify_assigned_rider_of_cancellation(order)
 
+        # A paid online order is refunded. This only queues it; the gateway is
+        # called after the cancel commits, so a rollback cannot refund a live
+        # order, and a failed refund cannot undo the cancel.
+        from payments.refunds import schedule_refund
+
+        schedule_refund(order)
+
     return order
 
 
@@ -167,6 +174,29 @@ class AdminOrderViewSet(
             )
 
         # The customer push is fired by apply_status_change above.
+        return self._fresh_response(order)
+
+    @action(detail=True, methods=["post"], url_path="refund", url_name="refund")
+    def refund(self, request, pk=None):
+        """
+        POST /api/admin/orders/{id}/refund/ — retry a cancelled order's refund.
+
+        For a refund that failed, one still pending (asks the gateway how it is
+        getting on), or a cancelled paid order that never got one. Synchronous:
+        the response is the order with the refund's new state.
+        """
+        from payments.refunds import RefundError, retry_refund
+
+        order = Order.objects.filter(pk=pk).first()
+        if order is None:
+            return Response(
+                {"error": "No Order matches the given query."},
+                status=http.HTTP_404_NOT_FOUND,
+            )
+        try:
+            retry_refund(order)
+        except RefundError as exc:
+            return Response({"error": str(exc)}, status=http.HTTP_400_BAD_REQUEST)
         return self._fresh_response(order)
 
     @action(detail=True, methods=["post"])

@@ -179,6 +179,44 @@ def retrieve_source_status(source_id):
     return status
 
 
+REFUNDS_URL = f"{API_ROOT}/refunds"
+
+_REFUND_OUTCOMES = {"succeeded": "refunded", "pending": "pending", "failed": "failed"}
+
+
+def create_refund(payment_id, amount, reason=""):
+    """
+    Return a settled payment's money to the customer.
+
+    Returns {"reference": "ref_...", "outcome": "refunded"|"pending"|"failed"}.
+    GCash refunds can stay `pending` for a while before PayMongo confirms.
+    """
+    payload = {
+        "data": {
+            "attributes": {
+                "amount": to_centavos(amount),
+                "payment_id": payment_id,
+                "reason": "requested_by_customer",
+                "notes": reason[:255],
+            }
+        }
+    }
+    body = _post(REFUNDS_URL, payload)
+    data = body.get("data") or {}
+    if not data.get("id"):
+        raise PayMongoError("PayMongo did not return a refund id.")
+    status = (data.get("attributes") or {}).get("status", "")
+    return {"reference": data["id"], "outcome": _REFUND_OUTCOMES.get(status, "pending")}
+
+
+def retrieve_refund(refund_id):
+    """The current state of a refund: {"reference", "outcome"}."""
+    body = _get(f"{REFUNDS_URL}/{refund_id}")
+    data = body.get("data") or {}
+    status = (data.get("attributes") or {}).get("status", "")
+    return {"reference": data.get("id", refund_id), "outcome": _REFUND_OUTCOMES.get(status, "pending")}
+
+
 def create_payment_from_source(source_id, amount, description=""):
     """
     Collect against a chargeable source.

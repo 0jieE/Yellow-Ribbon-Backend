@@ -117,6 +117,19 @@ def notify_delivery_failed(order, delivery):
     )
 
 
+def notify_refund(order, invoice):
+    """A cancelled, paid order is being (or has been) refunded."""
+    amount = f"\u20b1{invoice.refund_amount or invoice.amount_paid:,.2f}"
+    if invoice.refund_status == "refunded":
+        title, body = "Refund issued", f"{amount} for {order.order_number} has been refunded."
+    else:
+        title, body = (
+            "Refund on the way",
+            f"We are refunding {amount} for {order.order_number}. It may take a little while to show up.",
+        )
+    notify_users(order.customer.user, title, body, _order_data(order, event="refund"))
+
+
 def notify_rider_order_cancelled(order, rider):
     """
     An order a rider is still carrying has been cancelled.

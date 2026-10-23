@@ -13,15 +13,27 @@ from django.utils import timezone
 
 from core.notifications import notify_new_order
 from orders.admin_api import apply_status_change
-from orders.constants import OrderStatus, PaymentStatus
+from orders.constants import OrderStatus, PaymentStatus, PaymentType
 
-from .models import Invoice, next_invoice_number
+from . import maya
+from .fees import split
+from .models import Invoice, Provider, next_invoice_number
 
 logger = logging.getLogger(__name__)
 
+PROVIDER_BY_PAYMENT_TYPE = {
+    PaymentType.GCASH: Provider.PAYMONGO,
+    PaymentType.MAYA: Provider.MAYA,
+    PaymentType.COD: Provider.COD,
+}
+
+
+def provider_for(order):
+    return PROVIDER_BY_PAYMENT_TYPE.get(order.payment_type, "")
+
 
 @transaction.atomic
-def issue_invoice(order, *, source_id="", checkout_url=""):
+def issue_invoice(order, *, source_id="", checkout_url="", rrn=""):
     """
     Create the unpaid invoice that a GCash checkout hangs off.
 
@@ -36,13 +48,15 @@ def issue_invoice(order, *, source_id="", checkout_url=""):
             "amount_paid": 0,
             "paymongo_payment_id": source_id,
             "paymongo_checkout_url": checkout_url,
+            "provider": provider_for(order),
+            "provider_rrn": rrn,
         },
     )
     return invoice, created
 
 
 @transaction.atomic
-def settle_payment(order, *, amount=None, payment_id="", changed_by=None):
+def settle_payment(order, *, amount=None, payment_id="", changed_by=None, payer=""):
     """
     Mark an order paid and open the kitchen gate. Idempotent.
 
@@ -57,6 +71,7 @@ def settle_payment(order, *, amount=None, payment_id="", changed_by=None):
         defaults={
             "invoice_number": next_invoice_number(),
             "amount_paid": 0,
+            "provider": provider_for(order),
         },
     )
 
@@ -72,8 +87,21 @@ def settle_payment(order, *, amount=None, payment_id="", changed_by=None):
     invoice.paid_at = timezone.now()
     if payment_id:
         invoice.paymongo_payment_id = payment_id
+    invoice.provider = invoice.provider or provider_for(order)
+    if payer:
+        invoice.payer = payer
+    # Snapshot what the gateway keeps, at today's rates, for the earnings report.
+    invoice.fee, invoice.net_amount = split(invoice.provider, invoice.amount_paid)
     invoice.save(
-        update_fields=["amount_paid", "paid_at", "paymongo_payment_id"]
+        update_fields=[
+            "amount_paid",
+            "paid_at",
+            "paymongo_payment_id",
+            "provider",
+            "payer",
+            "fee",
+            "net_amount",
+        ]
     )
 
     if order.payment_status != PaymentStatus.PAID:
@@ -96,6 +124,14 @@ def settle_payment(order, *, amount=None, payment_id="", changed_by=None):
     # and settle at the door, so they are not re-announced here.
     if was_awaiting_payment:
         notify_new_order(order)
+
+    # Paid after the order was cancelled (the customer finished checking out
+    # after it timed out, or after cancelling): the shop owes the money back.
+    if order.status == OrderStatus.CANCELLED:
+        from .refunds import schedule_refund
+
+        logger.warning("%s was paid after it was cancelled; refunding.", order.order_number)
+        schedule_refund(order)
 
     return invoice, True
 
@@ -122,3 +158,52 @@ def record_cod_payment(order, changed_by=None):
     `paymongo_payment_id` stays blank, exactly as the schema notes.
     """
     return settle_payment(order, payment_id="", changed_by=changed_by)
+
+
+
+class SyncResult(dict):
+    """What a sync found: state, whether this call settled it, gateway status."""
+
+
+def sync_maya_order(order):
+    """
+    Ask Maya where this order's payment stands and act on the answer.
+
+    Maya has no webhook here, so this is how a Maya payment ever settles: the
+    return page, the app's poll and the stale-order reaper all call it. It
+    settles only when Maya itself reports the payment paid for the right amount.
+
+    Returns SyncResult(state=..., settled=bool, gateway_status=str) where
+    state is one of: no_checkout, paid, failed, pending.
+    Raises maya.MayaError when Maya cannot be asked.
+    """
+    invoice = Invoice.objects.filter(order=order, provider=Provider.MAYA).first()
+    if invoice is None or not invoice.provider_rrn:
+        return SyncResult(state="no_checkout", settled=False, gateway_status="")
+
+    if invoice.paid_at is not None:
+        return SyncResult(state="paid", settled=False, gateway_status="PAYMENT_SUCCESS")
+
+    payment = maya.retrieve_payment(invoice.provider_rrn)
+
+    if payment["state"] == "paid":
+        if payment["amount"] != order.total:
+            # Never settle a different amount than the order's total.
+            logger.error(
+                "Maya reports %s paid for %s but the order total is %s; not settling.",
+                payment["amount"],
+                order.order_number,
+                order.total,
+            )
+            return SyncResult(
+                state="failed", settled=False, gateway_status="AMOUNT_MISMATCH"
+            )
+        _, changed = settle_payment(
+            order, amount=order.total, payment_id=payment["id"], payer=payment["payer"]
+        )
+        return SyncResult(state="paid", settled=changed, gateway_status=payment["status"])
+
+    if payment["state"] == "failed":
+        mark_payment_failed(order)
+
+    return SyncResult(state=payment["state"], settled=False, gateway_status=payment["status"])

@@ -18,6 +18,7 @@ from core.admin_dashboard import (
 from core.admin_tools import csv_export_action
 from core.notifications import notify_rider_assigned
 from delivery.models import Delivery
+from payments.admin_actions import retry_refunds_for
 
 from .admin_api import apply_status_change
 from .admin_serializers import AssignRiderSerializer
@@ -150,9 +151,10 @@ class OrderAdmin(ModelAdmin):
         "mark_ready",
         "assign_rider",
         "cancel_orders",
+        "retry_refunds",
         csv_export_action("orders", _order_columns()),
     ]
-    actions_detail = ["advance_order", "cancel_order"]
+    actions_detail = ["advance_order", "cancel_order", "retry_refund_detail"]
 
     fieldsets = (
         (None, {"fields": ("order_number", "customer", "status")}),
@@ -267,6 +269,10 @@ class OrderAdmin(ModelAdmin):
         reason = (request.POST.get("cancel_reason") or "").strip()
         self._move(request, queryset, OrderStatus.CANCELLED, reason=reason)
 
+    @action(description="Retry refund (cancelled paid orders)", permissions=["change"])
+    def retry_refunds(self, request, queryset):
+        retry_refunds_for(self, request, list(queryset))
+
     @action(description="Assign to rider", permissions=["change"])
     def assign_rider(self, request, queryset):
         rider_id = request.POST.get("rider")
@@ -321,6 +327,13 @@ class OrderAdmin(ModelAdmin):
             )
         else:
             self._move(request, Order.objects.filter(pk=object_id), target)
+        return HttpResponseRedirect(reverse("admin:orders_order_change", args=[object_id]))
+
+    @action(description="Retry refund", url_path="retry-refund", permissions=["change"])
+    def retry_refund_detail(self, request, object_id):
+        order = Order.objects.filter(pk=object_id).first()
+        if order is not None:
+            retry_refunds_for(self, request, [order])
         return HttpResponseRedirect(reverse("admin:orders_order_change", args=[object_id]))
 
     @action(

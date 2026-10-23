@@ -9,6 +9,7 @@ app_name = "payments"
 urlpatterns = [
     path("checkout/", views.checkout, name="checkout"),
     path("webhook/", views.webhook, name="webhook"),
+    path("sync/", views.sync, name="sync"),
     # PayMongo redirect targets. Public pages, no auth — they carry no data.
     path("return/success/", views.return_success, name="return-success"),
     path("return/failed/", views.return_failed, name="return-failed"),

@@ -22,6 +22,9 @@ admin.site.index_title = "Delivery system administration"
 class StoreSettingsAdmin(ModelAdmin):
     """One row, edited in place. No list, no add, no delete."""
 
+    # Read by the admin sweep tests: a one-row model has no list to search or filter.
+    is_singleton = True
+
     readonly_fields = ("updated_at",)
     fieldsets = (
         (

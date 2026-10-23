@@ -2,8 +2,11 @@
 
 import json
 import logging
+import uuid
+from datetime import timedelta
 
 from django.conf import settings
+from django.utils import timezone
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
@@ -20,14 +23,21 @@ from core.permissions import IsCustomerUser
 from orders.constants import OrderStatus, PaymentStatus, PaymentType
 from orders.models import Order
 
+from . import maya
 from .gateway import (
     PayMongoError,
     create_gcash_source,
     create_payment_from_source,
     retrieve_source_status,
 )
-from .models import Invoice
-from .services import issue_invoice, mark_payment_failed, settle_payment
+from .models import Invoice, Provider
+from .services import (
+    issue_invoice,
+    mark_payment_failed,
+    provider_for,
+    settle_payment,
+    sync_maya_order,
+)
 from .signature import verify_signature
 
 logger = logging.getLogger(__name__)
@@ -45,8 +55,9 @@ def checkout(request):
     """
     POST /api/payments/checkout/ — body {"order_id": N}
 
-    Creates a GCash source for an order that is waiting on payment and
-    returns the checkout_url for the app to open.
+    Creates a checkout for an order that is waiting on payment and returns the
+    checkout_url for the app to open: a GCash source via PayMongo, or a Maya
+    Checkout, depending on the order's payment_type.
     """
     order_id = request.data.get("order_id")
     if order_id is None:
@@ -63,7 +74,7 @@ def checkout(request):
             status=http.HTTP_404_NOT_FOUND,
         )
 
-    if order.payment_type != PaymentType.GCASH:
+    if order.payment_type == PaymentType.COD:
         return Response(
             {"error": "This order is cash on delivery; there is nothing to pay online."},
             status=http.HTTP_400_BAD_REQUEST,
@@ -86,6 +97,9 @@ def checkout(request):
             {"error": f"{order.order_number} has already been paid."},
             status=http.HTTP_400_BAD_REQUEST,
         )
+    if order.payment_type == PaymentType.MAYA:
+        return _maya_checkout(request, order, existing)
+
     if existing is not None and existing.paymongo_checkout_url:
         source_status = "pending"
         if existing.paymongo_payment_id.startswith("src_"):
@@ -107,6 +121,7 @@ def checkout(request):
                     "amount": str(order.total),
                     "checkout_url": existing.paymongo_checkout_url,
                     "reused": True,
+                    "provider": Provider.PAYMONGO,
                 }
             )
 
@@ -169,8 +184,162 @@ def checkout(request):
             "amount": str(order.total),
             "checkout_url": source["checkout_url"],
             "reused": False,
+            "provider": Provider.PAYMONGO,
         },
         status=http.HTTP_201_CREATED,
+    )
+
+
+def _maya_checkout(request, order, existing):
+    """
+    The Maya half of checkout: open (or reuse) a Maya Checkout for the order.
+
+    Same response shape as GCash, plus `provider`. The return URLs carry our
+    own reference number, so the page the customer lands on can verify the
+    payment with Maya instead of trusting the browser.
+    """
+    if not (settings.MAYA_PUBLIC_KEY and settings.MAYA_SECRET_KEY):
+        return Response(
+            {"error": "Maya payments are not configured."},
+            status=http.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    if (
+        existing is not None
+        and existing.provider == Provider.MAYA
+        and existing.provider_rrn
+        and existing.paymongo_checkout_url
+    ):
+        try:
+            payment = maya.retrieve_payment(existing.provider_rrn)
+        except maya.MayaError as exc:
+            logger.warning("Could not check Maya for %s: %s", order.order_number, exc)
+            return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
+
+        if payment["state"] == "paid":
+            # They already paid; settle it now rather than opening a second checkout.
+            sync_maya_order(order)
+            return Response(
+                {
+                    "error": (
+                        "Your Maya payment went through and is being confirmed. "
+                        "Refresh the order in a moment."
+                    )
+                },
+                status=http.HTTP_409_CONFLICT,
+            )
+
+        created_at = payment["created_at"]
+        fresh = created_at is not None and timezone.now() - created_at < timedelta(
+            minutes=maya.REUSE_BEFORE_MINUTES
+        )
+        if payment["state"] == "pending" and fresh:
+            return Response(
+                {
+                    "order_id": order.pk,
+                    "order_number": order.order_number,
+                    "invoice_number": existing.invoice_number,
+                    "amount": str(order.total),
+                    "checkout_url": existing.paymongo_checkout_url,
+                    "reused": True,
+                    "provider": Provider.MAYA,
+                }
+            )
+        # failed, expired or about to: that link is no use. Open a new one.
+
+    rrn = uuid.uuid4().hex
+    success_url = request.build_absolute_uri(reverse("payments:return-success")) + f"?rrn={rrn}"
+    failed_url = request.build_absolute_uri(reverse("payments:return-failed")) + f"?rrn={rrn}"
+
+    try:
+        checkout_info = maya.create_checkout(order, rrn, success_url, failed_url, failed_url)
+    except maya.MayaError as exc:
+        logger.warning("Maya checkout failed for %s: %s", order.order_number, exc)
+        return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
+
+    invoice, created = issue_invoice(
+        order,
+        source_id=checkout_info["checkout_id"],
+        checkout_url=checkout_info["checkout_url"],
+        rrn=rrn,
+    )
+    if not created:
+        invoice.paymongo_payment_id = checkout_info["checkout_id"]
+        invoice.paymongo_checkout_url = checkout_info["checkout_url"]
+        invoice.provider = Provider.MAYA
+        invoice.provider_rrn = rrn
+        invoice.save(
+            update_fields=[
+                "paymongo_payment_id",
+                "paymongo_checkout_url",
+                "provider",
+                "provider_rrn",
+            ]
+        )
+
+    if order.payment_status == PaymentStatus.FAILED:
+        order.payment_status = PaymentStatus.UNPAID
+        order.save(update_fields=["payment_status"])
+
+    return Response(
+        {
+            "order_id": order.pk,
+            "order_number": order.order_number,
+            "invoice_number": invoice.invoice_number,
+            "amount": str(order.total),
+            "checkout_url": checkout_info["checkout_url"],
+            "reused": False,
+            "provider": Provider.MAYA,
+        },
+        status=http.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsCustomerUser])
+def sync(request):
+    """
+    POST /api/payments/sync/ — body {"order_id": N}
+
+    Re-checks an order's payment with the gateway and settles it if paid. For
+    Maya (no webhook) this is how a payment lands when the browser was closed:
+    the app calls it on the return deep link and while polling an unpaid order.
+    Other orders just report their current state.
+    """
+    order_id = request.data.get("order_id")
+    if order_id is None:
+        return Response({"error": "order_id is required."}, status=http.HTTP_400_BAD_REQUEST)
+
+    try:
+        order = Order.objects.filter(pk=order_id, customer__user=request.user).first()
+    except (TypeError, ValueError):
+        order = None
+    if order is None:
+        return Response(
+            {"error": "No Order matches the given query."}, status=http.HTTP_404_NOT_FOUND
+        )
+
+    result = {"state": "", "settled": False, "gateway_status": ""}
+    if order.payment_type == PaymentType.MAYA and order.payment_status != PaymentStatus.PAID:
+        try:
+            result = sync_maya_order(order)
+        except maya.MayaError as exc:
+            logger.warning("Maya sync failed for %s: %s", order.order_number, exc)
+            return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
+        order.refresh_from_db()
+
+    invoice = Invoice.objects.filter(order=order).first()
+    return Response(
+        {
+            "order_id": order.pk,
+            "order_number": order.order_number,
+            "provider": provider_for(order),
+            "payment_status": order.payment_status,
+            "order_status": order.status,
+            "paid": bool(invoice and invoice.paid_at),
+            "settled": bool(result["settled"]),
+            "gateway_status": result["gateway_status"],
+        }
     )
 
 
@@ -198,15 +367,29 @@ RETURN_PAGE = """<!doctype html>
 </body></html>"""
 
 
-@csrf_exempt
-def return_success(_request):
+def _verify_maya_return(rrn):
     """
-    Where PayMongo sends the customer after a successful GCash payment.
+    What Maya says about a payment the customer has just come back from.
 
-    This page is cosmetic — the order is settled by the webhook, not by the
-    customer's browser landing here. It exists because PayMongo requires an
-    http(s) redirect target, and it hands off to the app via deep link.
+    The `rrn` in the URL only says which payment to look up; the answer comes
+    from Maya, so nobody can mark an order paid by visiting a URL. Returns
+    "paid", "failed", "pending", or "unknown" (no such reference, or Maya
+    could not be reached).
     """
+    invoice = (
+        Invoice.objects.select_related("order")
+        .filter(provider=Provider.MAYA, provider_rrn=rrn)
+        .first()
+    )
+    if invoice is None:
+        return "unknown"
+    try:
+        return sync_maya_order(invoice.order)["state"]
+    except maya.MayaError:
+        return "unknown"
+
+
+def _success_page():
     return HttpResponse(
         RETURN_PAGE.format(
             mark="&#10004;",
@@ -220,9 +403,7 @@ def return_success(_request):
     )
 
 
-@csrf_exempt
-def return_failed(_request):
-    """Where PayMongo sends the customer after a failed or cancelled payment."""
+def _failed_page():
     return HttpResponse(
         RETURN_PAGE.format(
             mark="&#10007;",
@@ -234,6 +415,36 @@ def return_failed(_request):
             deep_link="yellowribbon://payment/failed",
         )
     )
+
+
+@csrf_exempt
+def return_success(request):
+    """
+    Where the gateway sends the customer after paying.
+
+    For GCash this page is cosmetic: the PayMongo webhook settles the order.
+    For Maya (`?rrn=...`) it is where the payment is verified, since Maya has
+    no webhook here; the page then reflects what Maya actually says, not the
+    fact that the customer arrived at a "success" URL.
+    """
+    rrn = request.GET.get("rrn")
+    if rrn and _verify_maya_return(rrn) == "failed":
+        return _failed_page()
+    return _success_page()
+
+
+@csrf_exempt
+def return_failed(request):
+    """
+    Where the gateway sends the customer after a failed or cancelled payment.
+
+    A Maya customer who paid in another tab and then landed here is still
+    checked: if Maya says paid, they get the success page.
+    """
+    rrn = request.GET.get("rrn")
+    if rrn and _verify_maya_return(rrn) == "paid":
+        return _success_page()
+    return _failed_page()
 
 
 def _collect_ids(node, found):

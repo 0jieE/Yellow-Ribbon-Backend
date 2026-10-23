@@ -10,6 +10,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from accounts import views as account_views
 from orders import views as order_views
@@ -21,6 +22,10 @@ def health(_request):
 
 
 urlpatterns = [
+    # The site root has no page of its own; send visitors to the admin, which
+    # shows the login form to anyone not signed in. Temporary (302) so a
+    # browser never caches the redirect if the root gets a real page later.
+    path("", RedirectView.as_view(pattern_name="admin:index", permanent=False)),
     path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
     path("api/auth/", include("accounts.urls")),

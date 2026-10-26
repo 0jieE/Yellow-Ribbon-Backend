@@ -18,9 +18,15 @@ from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
+# The notification channel all three apps create at startup (high importance)
+# and name in their manifests. Without it an Android 8+ phone files the push
+# under a default channel, which may not make a sound or pop up.
+ANDROID_CHANNEL_ID = "yellowribbon_orders"
+
 _init_lock = threading.Lock()
 _app = None
 _init_failed = False
+_init_error = ""  # why initialisation failed, for the admin's test-push report
 
 
 def _load_credential():
@@ -87,7 +93,7 @@ def _get_app():
     on a machine without credentials. One failed attempt is remembered so
     every push does not retry a missing file.
     """
-    global _app, _init_failed
+    global _app, _init_failed, _init_error
 
     if _app is not None:
         return _app
@@ -113,6 +119,7 @@ def _get_app():
             if credential is None:
                 logger.info("%s", reason)
                 _init_failed = True
+                _init_error = reason
                 return None
 
             _app = firebase_admin.initialize_app(credential)
@@ -130,15 +137,17 @@ def _get_app():
                 "Could not initialise Firebase; push notifications are off."
             )
             _init_failed = True
+            _init_error = "Firebase could not be initialised; see the server log."
             return None
 
 
 def reset_app_cache():
     """Test hook — forget the memoised app and failure flag."""
-    global _app, _init_failed
+    global _app, _init_failed, _init_error
     with _init_lock:
         _app = None
         _init_failed = False
+        _init_error = ""
 
 
 def _tokens_for(users):
@@ -166,6 +175,14 @@ def _delete_tokens(tokens):
     return deleted
 
 
+def _android_config(messaging):
+    """High priority, filed under the apps' own notification channel."""
+    return messaging.AndroidConfig(
+        priority="high",
+        notification=messaging.AndroidNotification(channel_id=ANDROID_CHANNEL_ID),
+    )
+
+
 def _dispatch(tokens, title, body, data):
     """The actual send. Called after commit; never raises."""
     try:
@@ -180,7 +197,7 @@ def _dispatch(tokens, title, body, data):
             notification=messaging.Notification(title=title, body=body),
             # FCM data values must all be strings.
             data={k: str(v) for k, v in (data or {}).items()},
-            android=messaging.AndroidConfig(priority="high"),
+            android=_android_config(messaging),
         )
 
         response = messaging.send_each_for_multicast(message)
@@ -243,7 +260,13 @@ def notify_users(users, title, body, data=None):
 
         tokens = _tokens_for(users)
         if not tokens:
-            logger.debug("No device tokens for the target user(s); nothing to push.")
+            # INFO, not DEBUG: "this person has no registered phone" is the
+            # most common reason a push never arrives, and it must be visible
+            # in the hosted logs.
+            names = ", ".join(sorted(str(u.username) for u in users if u is not None))
+            logger.info(
+                "No device token for %s; nothing to push for '%s'.", names or "nobody", title
+            )
             return
 
         transaction.on_commit(
@@ -260,8 +283,53 @@ def notify_admins(title, body, data=None):
 
         admins = list(User.objects.filter(is_admin=True, is_active=True))
         if not admins:
-            logger.debug("No admin accounts to notify.")
+            logger.info("No active admin accounts to notify for '%s'.", title)
             return
         notify_users(admins, title, body, data)
     except Exception:
         logger.exception("Could not queue an admin push notification; continuing.")
+
+
+
+def send_test_push(targets):
+    """
+    Send a real test notification to specific device tokens and report each one.
+
+    `targets` is a list of (label, fcm_token). Returns (error, results):
+    `error` is a message when Firebase is not usable at all (and results is
+    empty), otherwise None, and results is [(label, ok, detail)] where detail is
+    "sent" or "ErrorClass: message".
+
+    "sent" means Firebase accepted it; whether the phone shows it is up to the
+    app. Unlike a normal push this never deletes a token Firebase calls dead:
+    it is a diagnostic, so it reports the failure instead of hiding it.
+    Never raises.
+    """
+    try:
+        app = _get_app()
+        if app is None:
+            return _init_error or "Firebase is not configured.", []
+
+        from firebase_admin import messaging
+
+        results = []
+        for label, token in targets:
+            try:
+                messaging.send(
+                    messaging.Message(
+                        token=token,
+                        notification=messaging.Notification(
+                            title="Yellow Ribbon test",
+                            body="If you can read this, push notifications work.",
+                        ),
+                        data={"type": "test", "event": "test"},
+                        android=_android_config(messaging),
+                    )
+                )
+                results.append((label, True, "sent"))
+            except Exception as exc:
+                results.append((label, False, f"{type(exc).__name__}: {str(exc)[:160]}"))
+        return None, results
+    except Exception as exc:
+        logger.exception("Test push failed unexpectedly.")
+        return f"Unexpected error: {type(exc).__name__}", []

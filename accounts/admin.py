@@ -5,10 +5,59 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import action, display
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 
+from core import fcm
 from core.admin_tools import csv_export_action
 from orders.constants import ACTIVE_DELIVERY_STATUSES
 
 from .models import Customer, DeviceToken, Rider, User
+
+
+MAX_REPORT_LINES = 15
+
+
+def _token_preview(token):
+    return f"{token[:8]}...({len(token)})"
+
+
+def report_test_push(modeladmin, request, targets, users_without_tokens=()):
+    """
+    Send a test push to `targets` ([(label, token)]) and tell the admin exactly
+    what happened, in the message bar: how many Firebase accepted, and the
+    error class for each that it did not.
+    """
+    for name in users_without_tokens:
+        modeladmin.message_user(
+            request,
+            f"{name} has no device token registered, so nothing can be sent to them. "
+            "They need to sign in on their phone (and allow notifications).",
+            messages.WARNING,
+        )
+
+    if not targets:
+        if not users_without_tokens:
+            modeladmin.message_user(request, "Nothing selected to send to.", messages.WARNING)
+        return
+
+    error, results = fcm.send_test_push(targets)
+    if error:
+        modeladmin.message_user(request, f"No push was sent. {error}", messages.ERROR)
+        return
+
+    sent = [r for r in results if r[1]]
+    failed = [r for r in results if not r[1]]
+    if sent:
+        modeladmin.message_user(
+            request,
+            f"{len(sent)} test push(es) accepted by Firebase. Check the phone: if nothing "
+            "shows, the problem is on the app side (permission, channel or foreground handling).",
+            messages.SUCCESS,
+        )
+    for label, _, detail in failed[:MAX_REPORT_LINES]:
+        modeladmin.message_user(request, f"{label}: {detail}", messages.WARNING)
+    if len(failed) > MAX_REPORT_LINES:
+        modeladmin.message_user(
+            request, f"...and {len(failed) - MAX_REPORT_LINES} more failures.", messages.WARNING
+        )
 
 
 @admin.register(User)
@@ -22,7 +71,7 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
     search_fields = ("username", "email", "first_name", "last_name", "phone")
     ordering = ("username",)
     readonly_fields = ("date_joined", "last_login")
-    actions = ["activate_users", "deactivate_users"]
+    actions = ["activate_users", "deactivate_users", "send_test_push"]
 
     fieldsets = DjangoUserAdmin.fieldsets + (
         ("Yellow Ribbon", {"fields": ("phone", "is_admin", "is_rider", "is_customer")}),
@@ -40,6 +89,19 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
     )
     def role_badge(self, obj):
         return obj.role
+
+    @action(description="Send a test push to selected users", permissions=["change"])
+    def send_test_push(self, request, queryset):
+        targets, missing = [], []
+        for user in queryset.prefetch_related("device_tokens"):
+            tokens = list(user.device_tokens.all())
+            if not tokens:
+                missing.append(user.username)
+            targets += [
+                (f"{user.username} ({t.platform or '?'}) {_token_preview(t.fcm_token)}", t.fcm_token)
+                for t in tokens
+            ]
+        report_test_push(self, request, targets, missing)
 
     @action(description="Activate selected accounts", permissions=["change"])
     def activate_users(self, request, queryset):
@@ -120,6 +182,15 @@ class DeviceTokenAdmin(ModelAdmin):
     raw_id_fields = ("user",)
     readonly_fields = ("updated_at",)
     list_select_related = ("user",)
+    actions = ["send_test_push"]
+
+    @action(description="Send a test push to selected devices", permissions=["change"])
+    def send_test_push(self, request, queryset):
+        targets = [
+            (f"{t.user.username} ({t.platform or '?'}) {_token_preview(t.fcm_token)}", t.fcm_token)
+            for t in queryset.select_related("user")
+        ]
+        report_test_push(self, request, targets)
 
     @admin.display(description="token")
     def short_token(self, obj):

@@ -16,6 +16,7 @@ from core.notifications import (
     notify_order_status,
     notify_rider_assigned,
     notify_rider_order_cancelled,
+    notify_rider_order_ready,
 )
 from core.pagination import AdminOrderPagination
 from core.permissions import IsAdminUser
@@ -30,6 +31,7 @@ from .constants import (
     ACTIVE_DELIVERY_STATUSES,
     ORDER_STATUS,
     TERMINAL_DELIVERY_STATUSES,
+    DeliveryStatus,
     OrderStatus,
 )
 from .models import Order, OrderStatusLog
@@ -54,6 +56,20 @@ def _notify_assigned_rider_of_cancellation(order):
     if delivery is None or delivery.status in TERMINAL_DELIVERY_STATUSES:
         return
     notify_rider_order_cancelled(order, delivery.rider)
+
+
+def _notify_assigned_rider_order_ready(order):
+    """
+    Tell the rider holding this order that the food is ready.
+
+    Only while the delivery is still `assigned`: a rider who has already
+    picked it up has no use for "pick it up at the store". An unassigned order
+    has nobody to tell; the push goes out when someone is assigned instead.
+    """
+    delivery = getattr(order, "delivery", None)
+    if delivery is None or delivery.status != DeliveryStatus.ASSIGNED:
+        return
+    notify_rider_order_ready(order, delivery.rider)
 
 
 def apply_status_change(order, new_status, changed_by, reason="", notify_customer=True):
@@ -81,6 +97,11 @@ def apply_status_change(order, new_status, changed_by, reason="", notify_custome
     # reaper — so one hook covers the customer for all of them.
     if notify_customer:
         notify_order_status(order)
+
+    # The rider needs to know too, and is not the customer, so this is not
+    # gated on notify_customer either.
+    if new_status == OrderStatus.READY:
+        _notify_assigned_rider_order_ready(order)
 
     # Not gated on notify_customer: a rider mid-route has to be told the
     # order is off even when the customer cancelled it themselves and needs

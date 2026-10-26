@@ -12,6 +12,8 @@ and a consistent `data` payload to deep-link from.
 
 import logging
 
+from orders.constants import OrderStatus
+
 from .fcm import notify_admins, notify_users
 
 logger = logging.getLogger(__name__)
@@ -51,12 +53,32 @@ def notify_new_order(order):
 
 
 def notify_rider_assigned(order, rider):
-    """A rider has been given a delivery."""
+    """
+    A rider has been given a delivery.
+
+    If the food is already waiting (the order was marked ready before anyone
+    was assigned), say so: the rider should head to the store straight away
+    instead of waiting for a second push that will never come.
+    """
+    body = f"{order.order_number} to {order.delivery_address}."
+    if order.status == OrderStatus.READY:
+        body += " Ready for pickup now."
+
     notify_users(
         rider.user,
         "New delivery assigned",
-        f"{order.order_number} to {order.delivery_address}.",
+        body,
         _order_data(order, event="assigned", rider_id=rider.pk),
+    )
+
+
+def notify_rider_order_ready(order, rider):
+    """The store has finished an order this rider is assigned to."""
+    notify_users(
+        rider.user,
+        "Order ready for pickup",
+        f"{order.order_number} is ready. Pick it up at the store.",
+        _order_data(order, event="ready", rider_id=rider.pk),
     )
 
 

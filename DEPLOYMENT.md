@@ -203,8 +203,17 @@ in one file. It does not include uploaded photos (Cloudinary keeps those). It
 **does** include customer addresses, phone numbers and password hashes, so keep
 it private. `.gitignore` already stops it being committed.
 
-**Restore into the new database.** The free web service has no shell, so do
-this from your own computer:
+**Restore from the admin.** To put a downloaded backup back into the *running*
+site, open the same page, scroll to **Restore from a backup file**, choose the
+file, type `RESTORE` and press the red button. It **deletes everything currently
+there** and loads the file instead, so download a fresh backup first. All
+sessions end, so sign in again with an account *from the backup* (its username
+and password at the time). A file that is bad changes nothing, and one with no
+active admin account in it is refused, so you cannot lock yourself out. Do it
+when nobody is ordering.
+
+**Restore into a new database.** The free web service has no shell, so when the
+old database is gone and the site cannot start, do this from your own computer:
 
 1. Create the new Render Postgres and copy its **External Database URL**.
 2. In your local `.env`, set `DATABASE_URL` to it, with `?sslmode=require` on the end.

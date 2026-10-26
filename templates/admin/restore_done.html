@@ -1,0 +1,21 @@
+{% extends 'unfold/layouts/unauthenticated.html' %}
+
+{% load i18n static unfold %}
+
+{# Standalone on purpose: a restore deletes every session, so there is no admin to return to. #}
+{% block content %}
+    {% include "unfold/helpers/unauthenticated_title.html" with title=title subtitle="Yellow Ribbon Pizza" %}
+
+    <p class="text-sm mb-4">
+        The backup was loaded: {{ rows }} rows replaced everything that was here.
+    </p>
+    <p class="text-sm mb-6">
+        You have been signed out, as has everyone else. Sign in again with an account
+        <strong>from the backup</strong>: usernames and passwords are the ones the backup was
+        taken with, not the ones you used a moment ago.
+    </p>
+
+    {% component "unfold/components/button.html" with href=login_url variant="primary" class="w-full" %}
+        Sign in
+    {% endcomponent %}
+{% endblock %}

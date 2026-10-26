@@ -13,7 +13,7 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 
 from accounts import views as account_views
-from core.admin_views import backup_view
+from core.admin_views import backup_view, restore_view
 from orders import views as order_views
 
 
@@ -29,6 +29,7 @@ urlpatterns = [
     path("", RedirectView.as_view(pattern_name="admin:index", permanent=False)),
     # Before admin.site.urls, which would otherwise claim everything under admin/.
     path("admin/backup/", admin.site.admin_view(backup_view), name="backup"),
+    path("admin/backup/restore/", admin.site.admin_view(restore_view), name="backup-restore"),
     path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
     path("api/auth/", include("accounts.urls")),

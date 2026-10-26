@@ -24,13 +24,19 @@ from itertools import takewhile
 
 from django.apps import apps
 from django.core.management import call_command
-from django.db import connection
+from django.db import connection, transaction
 from django.utils import timezone
 
 from orders.models import ORDER_NUMBER_SEQUENCE, Order
 from payments.models import INVOICE_NUMBER_SEQUENCE, Invoice
 
 logger = logging.getLogger(__name__)
+
+# Limits for a backup uploaded through the admin. The free web service has a
+# small amount of memory and a short request timeout; a real backup of this
+# shop is a few hundred KB, so these are generous but not unbounded.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_DECOMPRESSED_BYTES = 250 * 1024 * 1024
 
 # Recreated by `migrate`, so restoring them would only fight the fresh copies.
 # LogEntry is admin click history, not business data.
@@ -128,30 +134,94 @@ def reset_number_sequences():
     return result
 
 
+def parse_backup(raw, label="That file"):
+    """
+    (fixture text, rows) from the bytes of a .json.gz or plain .json backup.
+
+    Raises BackupError for anything that is not a Django data dump, or that
+    unpacks to more than MAX_DECOMPRESSED_BYTES (so a tiny hostile file cannot
+    expand to fill the server's memory).
+    """
+    too_big = BackupError(
+        f"{label} is too large once unpacked "
+        f"(over {MAX_DECOMPRESSED_BYTES // (1024 * 1024)} MB)."
+    )
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(raw)) as handle:
+            data = handle.read(MAX_DECOMPRESSED_BYTES + 1)
+    except (OSError, EOFError):
+        data = raw  # not gzipped: assume plain JSON
+    if len(data) > MAX_DECOMPRESSED_BYTES:
+        raise too_big
+
+    try:
+        text = data.decode("utf-8")
+        rows = json.loads(text)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise BackupError(f"{label} is not a Yellow Ribbon backup: {exc}")
+
+    if not isinstance(rows, list) or not all(
+        isinstance(row, dict) and "model" in row for row in rows
+    ):
+        raise BackupError(f"{label} is not a Django data dump.")
+    return text, rows
+
+
 def read_backup(path):
-    """The fixture text from a .json.gz or plain .json backup file."""
+    """The fixture text and row count of a backup file on disk."""
     try:
         with open(path, "rb") as handle:
             raw = handle.read()
     except OSError as exc:
         raise BackupError(f"Cannot read {path}: {exc}")
 
-    try:
-        raw = gzip.decompress(raw)
-    except (OSError, EOFError):
-        pass  # not gzipped: assume plain JSON
-
-    try:
-        text = raw.decode("utf-8")
-        rows = json.loads(text)
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise BackupError(f"{path} is not a Yellow Ribbon backup: {exc}")
-
-    if not isinstance(rows, list) or not all(
-        isinstance(row, dict) and "model" in row for row in rows
-    ):
-        raise BackupError(f"{path} is not a Django data dump.")
+    text, rows = parse_backup(raw, label=str(path))
     return text, len(rows)
+
+
+def has_admin_login(rows):
+    """
+    Whether the backup contains an account that can sign in to the admin: an
+    active, staff superuser. Restoring one without it would replace every user
+    and leave nobody able to get back in.
+    """
+    for row in rows:
+        if row.get("model") != "accounts.user":
+            continue
+        fields = row.get("fields") or {}
+        if fields.get("is_superuser") and fields.get("is_staff") and fields.get("is_active", True):
+            return True
+    return False
+
+
+def _apply(text, flush):
+    """
+    Load fixture text into the database, all or nothing.
+
+    With `flush` the existing data is wiped first, and the wipe and the load
+    share one transaction: if anything in the file fails, the database is
+    left exactly as it was. Returns the number sequences after the load.
+    """
+    # loaddata wants a file whose name ends .json.
+    handle, tmp_path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as tmp:
+            tmp.write(text)
+        try:
+            with transaction.atomic():
+                if flush:
+                    call_command("flush", interactive=False, verbosity=0)
+                call_command("loaddata", tmp_path, verbosity=0)
+        except Exception as exc:
+            logger.warning("Restore failed and was rolled back: %s: %s", type(exc).__name__, exc)
+            raise BackupError(
+                "The backup could not be loaded, so nothing was changed. "
+                f"({type(exc).__name__}: {str(exc)[:200]})"
+            )
+    finally:
+        os.remove(tmp_path)
+
+    return reset_number_sequences()
 
 
 def restore_backup(path, flush=False):
@@ -163,23 +233,40 @@ def restore_backup(path, flush=False):
     """
     text, count = read_backup(path)
 
+    wipe = False
     if not database_is_empty():
         if not flush:
             raise BackupError(
                 "The database already has data. Restore into a fresh database, "
                 "or pass --flush to wipe it first."
             )
-        call_command("flush", interactive=False, verbosity=0)
+        wipe = True
 
-    # loaddata wants a file whose name ends .json.
-    handle, tmp_path = tempfile.mkstemp(suffix=".json")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as tmp:
-            tmp.write(text)
-        call_command("loaddata", tmp_path, verbosity=0)
-    finally:
-        os.remove(tmp_path)
-
-    sequences = reset_number_sequences()
+    sequences = _apply(text, flush=wipe)
     logger.info("Restored %s rows from %s.", count, path)
     return count, sequences
+
+
+def restore_uploaded_backup(raw):
+    """
+    Replace ALL current data with an uploaded backup (the admin's Restore).
+
+    Refuses, changing nothing, when the file is too big, is not a backup, or
+    holds no account able to sign in to the admin. Returns (rows, sequences).
+    """
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise BackupError(
+            f"That file is too large (over {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)."
+        )
+
+    text, rows = parse_backup(raw)
+
+    if not has_admin_login(rows):
+        raise BackupError(
+            "That backup has no active admin account in it, so restoring it would lock "
+            "everyone out of the admin. Nothing was changed."
+        )
+
+    sequences = _apply(text, flush=True)
+    logger.warning("Database replaced from an uploaded backup (%s rows).", len(rows))
+    return len(rows), sequences

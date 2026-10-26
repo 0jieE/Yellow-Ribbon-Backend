@@ -28,7 +28,25 @@
         </p>
     {% endcomponent %}
 
-    {% component "unfold/components/card.html" with title="Restoring into a new database" title_icon="restore" %}
+    {% component "unfold/components/card.html" with title="Restore from a backup file" title_icon="upload_file" description="Replaces everything here with the contents of a backup you downloaded" %}
+        <form method="post" action="{% url 'backup-restore' %}" enctype="multipart/form-data" class="yr-backup-form"
+              onsubmit="return confirm('This DELETES all current data and replaces it with the backup. This cannot be undone. Continue?');">
+            {% csrf_token %}
+            <ul class="yr-steps yr-bullets text-sm">
+                <li><strong>This deletes everything currently here</strong> (orders, customers, riders, menu, settings) and loads the file instead. It cannot be undone, so use <em>Download backup</em> above first.</li>
+                <li>You and everyone else will be <strong>signed out</strong>. Sign in again with an account <strong>from the backup</strong>, using the password it had then.</li>
+                <li>If the file is bad, nothing changes. A backup with no active admin account is refused, so you cannot lock yourself out.</li>
+                <li>Best done when no one is placing orders. Largest file: {{ max_upload_mb }} MB.</li>
+            </ul>
+            <input type="file" name="backup" accept=".gz,.json,application/gzip,application/json" required class="yr-file">
+            <input type="text" name="confirm" placeholder="Type {{ confirm_word }} to confirm" autocomplete="off" required class="yr-confirm">
+            {% component "unfold/components/button.html" with submit=1 variant="danger" icon="warning" size="md" %}
+                Restore and replace all data
+            {% endcomponent %}
+        </form>
+    {% endcomponent %}
+
+    {% component "unfold/components/card.html" with title="Restoring into a new database" title_icon="restore" description="The other way: from your own computer, when the old database is gone" %}
         <ol class="yr-steps text-sm">
             <li>Create the new Render Postgres and copy its <strong>External Database URL</strong>.</li>
             <li>On your computer, put it in <code>.env</code> as <code>DATABASE_URL</code> (add <code>?sslmode=require</code>).</li>

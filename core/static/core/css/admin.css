@@ -114,3 +114,24 @@
     border-radius: 4px;
     background: color-mix(in oklab, currentColor 10%, transparent);
 }
+
+/* Restore form. */
+.yr-bullets {
+    list-style: disc;
+}
+
+.yr-file,
+.yr-confirm {
+    width: 100%;
+    max-width: 28rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-base-300, #d1d5db);
+    border-radius: 6px;
+    background: transparent;
+    font: inherit;
+}
+
+.dark .yr-file,
+.dark .yr-confirm {
+    border-color: var(--color-base-700, #374151);
+}

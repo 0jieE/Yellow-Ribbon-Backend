@@ -67,6 +67,11 @@ Render dashboard → **New** → **Web Service** → connect the GitHub repo.
 | Start command | `gunicorn config.wsgi:application` |
 | Plan | Free |
 
+Gunicorn also reads `gunicorn.conf.py` from the repo root on its own, so the
+start command stays as it is. That file switches it to threads: an APK
+download from the website takes minutes on a phone and must not hold the only
+worker (or hit the 30-second timeout).
+
 `bash ./build.sh` rather than `./build.sh` — the repo is authored on
 Windows, which does not track the executable bit, so invoking it through
 `bash` avoids a "permission denied" build failure.
@@ -228,6 +233,39 @@ old database is gone and the site cannot start, do this from your own computer:
 Order and invoice numbers carry on from where they stopped (`restore_backup`
 resets their Postgres sequences). Restore with the same version of the code
 that made the backup.
+
+**The APKs are not in the backup.** They are 50+ MB each. A restore from the
+admin leaves them where they are, but a brand-new database starts without
+them: upload them again under **System → App downloads** (step 10).
+
+---
+
+## 10. The public website and app downloads
+
+`/` is the shop's website: the menu (live from the database), the delivery
+area and fee, how ordering works, and a **Download the app** button. The text
+under **About the shop** and the address, opening hours, phone and Facebook
+link come from **Store settings → Website**; anything left blank is left off.
+
+The APKs are uploaded in the admin under **System → App downloads**:
+
+1. Build each app: `flutter build apk --release` (the file is
+   `build/app/outputs/flutter-apk/app-release.apk`).
+2. **Add app download**, pick the app, type its version, choose the APK, save.
+   Uploading a new APK for the same app replaces the old one; the download
+   link stays the same.
+
+Who can download what:
+
+| App | Where | Who |
+|---|---|---|
+| Yellow Ribbon (customer) | the home page | anyone |
+| Ribbon Rider | `/staff/`, after signing in | rider accounts (and store admins) |
+| Ribbon Admin | `/staff/`, after signing in | store admins and superusers |
+
+The files are kept in Postgres in 1 MB pieces, because the free web service has
+no lasting disk and Cloudinary's free plan refuses files over 10 MB. Three
+fat APKs take about 160 MB of the free database's 1 GB.
 
 ---
 

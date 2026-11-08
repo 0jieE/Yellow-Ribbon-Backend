@@ -63,6 +63,15 @@ class StoreSettingsAdmin(ModelAdmin):
                 ),
             },
         ),
+        (
+            "Website",
+            {
+                "fields": ("about", "address", "opening_hours", "phone", "facebook_url"),
+                "description": (
+                    "Shown on the public website. Anything left blank is left off the page."
+                ),
+            },
+        ),
         (None, {"fields": ("updated_at",)}),
     )
 

@@ -17,6 +17,8 @@
             <p class="text-sm">
                 {{ total_rows }} rows across all tables are included. Photos are not:
                 with Cloudinary they are stored there and survive on their own.
+                Nor are the uploaded APKs under App downloads: a restore keeps them,
+                but a new database needs them uploaded again.
             </p>
             {% component "unfold/components/button.html" with submit=1 variant="primary" icon="download" size="md" %}
                 Download backup

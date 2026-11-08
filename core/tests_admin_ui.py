@@ -69,16 +69,14 @@ class AdminUITestBase(TestCase):
         return [str(m) for m in get_messages(response.wsgi_request)]
 
 
-class RootRedirectTests(TestCase):
-    def test_site_root_goes_to_admin(self):
-        response = self.client.get("/")
-        self.assertRedirects(response, "/admin/", fetch_redirect_response=False)
-        self.assertEqual(response.status_code, 302)
+class SiteRootTests(TestCase):
+    """/ is the public website now, with its own link to the admin."""
 
-    def test_signed_out_visitor_ends_at_the_login_form(self):
-        response = self.client.get("/", follow=True)
-        self.assertEqual(response.redirect_chain[-1][0].split("?")[0], "/admin/login/")
+    def test_site_root_is_the_landing_page(self):
+        response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "website/home.html")
+        self.assertContains(response, 'href="/admin/"')
 
     def test_api_routes_are_untouched(self):
         self.assertEqual(self.client.get("/api/health/").status_code, 200)

@@ -10,7 +10,6 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
-from django.views.generic import RedirectView
 
 from accounts import views as account_views
 from core.admin_views import backup_view, restore_view
@@ -23,10 +22,6 @@ def health(_request):
 
 
 urlpatterns = [
-    # The site root has no page of its own; send visitors to the admin, which
-    # shows the login form to anyone not signed in. Temporary (302) so a
-    # browser never caches the redirect if the root gets a real page later.
-    path("", RedirectView.as_view(pattern_name="admin:index", permanent=False)),
     # Before admin.site.urls, which would otherwise claim everything under admin/.
     path("admin/backup/", admin.site.admin_view(backup_view), name="backup"),
     path("admin/backup/restore/", admin.site.admin_view(restore_view), name="backup-restore"),
@@ -40,6 +35,8 @@ urlpatterns = [
     path("api/admin/", include("config.admin_api_urls")),
     path("api/rider/", include("delivery.urls")),
     path("api/payments/", include("payments.urls")),
+    # The public website: landing page at /, staff sign-in, APK downloads.
+    path("", include("website.urls")),
 ]
 
 if settings.DEBUG:

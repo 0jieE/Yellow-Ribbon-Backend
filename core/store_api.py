@@ -31,6 +31,11 @@ class StoreSettingsSerializer(serializers.ModelSerializer):
             "paymongo_fee_fixed",
             "maya_fee_percent",
             "maya_fee_fixed",
+            "about",
+            "address",
+            "opening_hours",
+            "phone",
+            "facebook_url",
             "updated_at",
         ]
         read_only_fields = ["delivery_fee_mode", "updated_at"]

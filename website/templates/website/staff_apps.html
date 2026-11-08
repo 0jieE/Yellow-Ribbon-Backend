@@ -1,0 +1,62 @@
+{% extends "website/base.html" %}
+{% load static %}
+
+{% block title %}Rider sign-in | Yellow Ribbon Pizza{% endblock %}
+{% block description %}Riders sign in here to download the Ribbon Rider app.{% endblock %}
+{% block body_class %}staff{% endblock %}
+
+{% block content %}
+<section class="staff-panel">
+    {% if user.is_authenticated and apps %}
+        <h1>Your apps</h1>
+        <p>Signed in as <strong>{{ user.username }}</strong>.</p>
+        <ul class="staff-apps">
+            {% for app in apps %}
+            <li>
+                <img src="{% static 'website/img/'|add:app.kind|add:'-app.webp' %}" alt="" width="72" height="72">
+                <div>
+                    <h2>{{ app.kind.label }}</h2>
+                    {% if app.release %}
+                        <a class="btn btn--small" href="{% url 'website:download' app.kind %}" download>Download</a>
+                        <p class="fine">Version {{ app.release.version }}, {{ app.release.size_mb }} MB.</p>
+                    {% else %}
+                        <p class="fine">Not uploaded yet. Ask the store admin to upload it under App downloads.</p>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        <p class="fine">
+            Your phone may ask you to allow installs from your browser; allow it once to install.
+            Open the app and sign in with the same account.
+        </p>
+        <form method="post" action="{% url 'website:sign-out' %}">
+            {% csrf_token %}
+            <button type="submit" class="link-button">Sign out</button>
+        </form>
+    {% else %}
+        <img class="staff-icon" src="{% static 'website/img/rider-app.webp' %}" alt="" width="96" height="96">
+        <h1>Rider sign-in</h1>
+        <p>Sign in with your rider account to download the Ribbon Rider app.</p>
+
+        {% if refused %}<p class="alert" role="alert">{{ refused }}</p>{% endif %}
+        {% if form.non_field_errors %}
+            <p class="alert" role="alert">Wrong username or password. Check both and try again; the password is case-sensitive.</p>
+        {% endif %}
+
+        <form method="post" class="sign-in">
+            {% csrf_token %}
+            <label for="{{ form.username.id_for_label }}">Username</label>
+            {{ form.username }}
+            <label for="{{ form.password.id_for_label }}">Password</label>
+            {{ form.password }}
+            <button type="submit" class="btn">Sign in</button>
+        </form>
+        <p class="fine">No rider account yet? The store admin creates them. Ordering pizza? <a href="{% url 'website:home' %}#get-the-app">Get the customer app</a>, no sign-in needed.</p>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block footer %}
+<p class="small">&copy; {% now "Y" %} Yellow Ribbon Pizza. <a href="{% url 'website:home' %}">Back to the home page</a></p>
+{% endblock %}

@@ -10,6 +10,10 @@ migrated with the same code.
 What is NOT in it: uploaded photos. With Cloudinary configured they live
 there and survive on their own; the backup holds only their names.
 
+Also NOT in it: the APKs uploaded for the website (the `website` app). They
+are 50+ MB each and do not change with the data, so a restore leaves them
+where they are; a brand-new database needs them uploaded once more.
+
 What IS in it: every row of every table, including password hashes and push
 tokens. Treat the file like a credential.
 """
@@ -24,6 +28,7 @@ from itertools import takewhile
 
 from django.apps import apps
 from django.core.management import call_command
+from django.core.management.color import no_style
 from django.db import connection, transaction
 from django.utils import timezone
 
@@ -40,7 +45,12 @@ MAX_DECOMPRESSED_BYTES = 250 * 1024 * 1024
 
 # Recreated by `migrate`, so restoring them would only fight the fresh copies.
 # LogEntry is admin click history, not business data.
-EXCLUDED = ["contenttypes", "auth.Permission", "sessions", "admin.LogEntry"]
+# The website app holds the uploaded APKs: not in the backup, not wiped by a restore.
+NOT_BACKED_UP_APPS = {"website"}
+EXCLUDED = ["contenttypes", "auth.Permission", "sessions", "admin.LogEntry", *NOT_BACKED_UP_APPS]
+# Not wiped before a restore either: migrate made them, and the backup's
+# permission references are resolved against them by name.
+_KEPT_LABELS = {"contenttypes.contenttype", "auth.permission"}
 _EXCLUDED_LABELS = {
     "contenttypes.contenttype",
     "auth.permission",
@@ -69,6 +79,7 @@ def _backed_up_models():
         model
         for model in apps.get_models()
         if model._meta.label_lower not in _EXCLUDED_LABELS
+        and model._meta.app_label not in NOT_BACKED_UP_APPS
     ]
 
 
@@ -194,6 +205,26 @@ def has_admin_login(rows):
     return False
 
 
+def _wipe():
+    """
+    Empty every table a restore replaces, in one TRUNCATE.
+
+    That is everything except content types and permissions (made by migrate)
+    and the website's uploaded APKs. Sessions and the admin's history go too,
+    so everyone is signed out, as with `flush`.
+    """
+    tables = [
+        model._meta.db_table
+        for model in apps.get_models(include_auto_created=True)
+        if model._meta.managed
+        and not model._meta.proxy
+        and model._meta.label_lower not in _KEPT_LABELS
+        and model._meta.app_label not in NOT_BACKED_UP_APPS
+    ]
+    sql = connection.ops.sql_flush(no_style(), tables, reset_sequences=True)
+    connection.ops.execute_sql_flush(sql)
+
+
 def _apply(text, flush):
     """
     Load fixture text into the database, all or nothing.
@@ -210,7 +241,7 @@ def _apply(text, flush):
         try:
             with transaction.atomic():
                 if flush:
-                    call_command("flush", interactive=False, verbosity=0)
+                    _wipe()
                 call_command("loaddata", tmp_path, verbosity=0)
         except Exception as exc:
             logger.warning("Restore failed and was rolled back: %s: %s", type(exc).__name__, exc)

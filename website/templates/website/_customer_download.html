@@ -1,0 +1,13 @@
+{% if customer_app %}
+<div class="download">
+    <a class="btn" href="{% url 'website:download' 'customer' %}" download>
+        Download the app
+    </a>
+    <p class="fine">
+        Android, version {{ customer_app.version }}, {{ customer_app.size_mb }} MB.
+        Your phone may ask you to allow installs from your browser; allow it once to install.
+    </p>
+</div>
+{% else %}
+<p class="download soon">The app will be available to download here soon.</p>
+{% endif %}

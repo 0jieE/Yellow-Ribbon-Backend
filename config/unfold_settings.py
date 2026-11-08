@@ -149,6 +149,11 @@ UNFOLD = {
                         "link": reverse_lazy("admin:core_storesettings_changelist"),
                     },
                     {
+                        "title": _("App downloads"),
+                        "icon": "install_mobile",
+                        "link": reverse_lazy("admin:website_apprelease_changelist"),
+                    },
+                    {
                         "title": _("Database backup"),
                         "icon": "backup",
                         "link": reverse_lazy("backup"),

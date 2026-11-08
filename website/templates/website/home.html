@@ -1,0 +1,106 @@
+{% extends "website/base.html" %}
+{% load static %}
+
+{% block body_class %}home{% endblock %}
+
+{% block nav %}
+<nav class="nav" aria-label="Sections">
+    <a href="#menu">Menu</a>
+    <a href="#get-the-app">Get the app</a>
+    <a href="#visit">Find us</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-text">
+        <h1>Yellow Ribbon Pizza</h1>
+        <p class="lede">
+            Pizza from our oven in {{ store.service_area_city }}, brought to your door.
+            Order in the Yellow Ribbon app and watch your rider on the map until it arrives.
+        </p>
+        {% include "website/_customer_download.html" %}
+    </div>
+    <img class="hero-slice" src="{% static 'website/img/customer-app.webp' %}" alt="The Yellow Ribbon app icon, a slice of pepperoni pizza" width="480" height="480">
+</section>
+
+<div class="ribbon" role="note">
+    <p>
+        We deliver anywhere within {{ store.service_area_radius_km|floatformat:"-2" }} km of the shop in {{ store.service_area_city }}.
+        {% if store.delivery_fee_per_km %}
+            Delivery is ₱{{ store.delivery_fee|floatformat:"-2" }} plus ₱{{ store.delivery_fee_per_km|floatformat:"-2" }} a km.
+        {% else %}
+            Delivery is ₱{{ store.delivery_fee|floatformat:"-2" }}.
+        {% endif %}
+    </p>
+</div>
+
+<section class="band menu-band" id="menu" aria-labelledby="menu-title">
+    <h2 id="menu-title">Menu</h2>
+    {% if menu %}
+    <ul class="menu">
+        {% for item in menu %}
+        <li class="dish{% if not item.is_available %} is-out{% endif %}">
+            {% if item.photo %}
+                <img class="dish-photo" src="{{ item.photo.url }}" alt="" loading="lazy" width="112" height="112">
+            {% else %}
+                <span class="dish-photo dish-photo--none" aria-hidden="true"></span>
+            {% endif %}
+            <div class="dish-text">
+                <div class="dish-head">
+                    <h3>{{ item.name }}</h3>
+                    <span class="price">₱{{ item.price|floatformat:"-2" }}</span>
+                </div>
+                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                {% if not item.is_available %}<p class="out">Not available right now</p>{% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">The menu is being updated. Check back soon, or open the app to see what's cooking.</p>
+    {% endif %}
+</section>
+
+<section class="band app-band" id="get-the-app" aria-labelledby="app-title">
+    <div class="app-intro">
+        <h2 id="app-title">Ordering takes four steps</h2>
+        <ol class="steps">
+            <li><span><strong>Install the Yellow Ribbon app</strong> on your Android phone and create an account.</span></li>
+            <li><span><strong>Pick your pizzas</strong> and drop a pin where you want them delivered.</span></li>
+            <li><span><strong>Pay the way you like:</strong> cash when it arrives, GCash or Maya.</span></li>
+            <li><span><strong>Follow your rider on the map</strong> and get a notification when your order is on its way.</span></li>
+        </ol>
+    </div>
+    <div class="app-card">
+        <img src="{% static 'website/img/customer-app.webp' %}" alt="" width="96" height="96">
+        <h3>Yellow Ribbon for Android</h3>
+        {% include "website/_customer_download.html" %}
+    </div>
+</section>
+
+<section class="band visit-band" id="visit" aria-labelledby="visit-title">
+    <h2 id="visit-title">About the shop</h2>
+    <div class="visit">
+        <div class="about">
+            {% for paragraph in about_paragraphs %}
+                <p>{{ paragraph|linebreaksbr }}</p>
+            {% empty %}
+                <p>
+                    Yellow Ribbon Pizza bakes pizza in {{ store.service_area_city }} and delivers it
+                    with our own riders. Every order goes through the Yellow Ribbon app, so you
+                    always know where your pizza is.
+                </p>
+            {% endfor %}
+        </div>
+        {% if store.address or store.opening_hours or store.phone or store.facebook_url %}
+        <dl class="facts">
+            {% if store.address %}<div><dt>Address</dt><dd>{{ store.address }}</dd></div>{% endif %}
+            {% if store.opening_hours %}<div><dt>Open</dt><dd>{{ store.opening_hours }}</dd></div>{% endif %}
+            {% if store.phone %}<div><dt>Call</dt><dd><a href="tel:{{ store.phone|cut:' ' }}">{{ store.phone }}</a></dd></div>{% endif %}
+            {% if store.facebook_url %}<div><dt>Facebook</dt><dd><a href="{{ store.facebook_url }}" rel="noopener" target="_blank">Message us on Facebook</a></dd></div>{% endif %}
+        </dl>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

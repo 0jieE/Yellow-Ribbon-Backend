@@ -1,0 +1,35 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Yellow Ribbon Pizza{% endblock %}</title>
+    <meta name="description" content="{% block description %}Pizza from Yellow Ribbon in Kidapawan City, delivered to your door. Order in the Yellow Ribbon app.{% endblock %}">
+    <meta name="theme-color" content="#F4B708">
+    <link rel="icon" href="{% static 'core/img/favicon-32.png' %}" sizes="32x32">
+    <link rel="apple-touch-icon" href="{% static 'core/img/favicon-180.png' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Lilita+One&display=swap">
+    <link rel="stylesheet" href="{% static 'website/css/site.css' %}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="masthead">
+        <a class="brand" href="{% url 'website:home' %}">
+            <img src="{% static 'core/img/logo.png' %}" alt="" width="40" height="40">
+            <span>Yellow Ribbon Pizza</span>
+        </a>
+        {% block nav %}{% endblock %}
+    </header>
+    <main id="main">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="site-foot">
+        {% block footer %}
+        <p>Riding for Yellow Ribbon? <a href="{% url 'website:staff-apps' %}">Sign in to download the rider app</a>.</p>
+        <p class="small">&copy; {% now "Y" %} Yellow Ribbon Pizza, Kidapawan City. <a href="{% url 'admin:index' %}">Store admin</a></p>
+        {% endblock %}
+    </footer>
+</body>
+</html>

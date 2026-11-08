@@ -99,6 +99,21 @@ class StoreSettings(models.Model):
     )
     maya_fee_fixed = _peso_field("0.00", "Maya's fixed fee per payment, in pesos.")
 
+    # -- public website --------------------------------------------------
+    # Shown on the landing page at /. Anything left blank is left off.
+
+    about = models.TextField(
+        blank=True,
+        max_length=2000,
+        help_text="A few sentences about the shop for the website. Blank lines start a new paragraph.",
+    )
+    address = models.CharField(max_length=255, blank=True, help_text="Where the shop is.")
+    opening_hours = models.CharField(
+        max_length=255, blank=True, help_text='For example "Daily, 10 AM to 9 PM".'
+    )
+    phone = models.CharField(max_length=30, blank=True, help_text="A number customers can call.")
+    facebook_url = models.URLField(blank=True, help_text="The shop's Facebook page.")
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

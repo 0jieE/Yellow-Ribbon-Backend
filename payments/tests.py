@@ -435,7 +435,7 @@ class WebhookSettlementTests(PaymentTestBase):
         self.assertEqual(log.status, OrderStatus.PENDING)
         self.assertIsNone(log.changed_by)
 
-    @patch("payments.views.create_payment_from_source")
+    @patch("payments.gateway.create_payment_from_source")
     def test_source_chargeable_collects_then_settles(self, create_payment):
         create_payment.return_value = {"payment_id": PAYMENT_ID, "status": "paid"}
 
@@ -450,7 +450,7 @@ class WebhookSettlementTests(PaymentTestBase):
         self.assertEqual(self.order.payment_status, PaymentStatus.PAID)
 
     @patch(
-        "payments.views.create_payment_from_source",
+        "payments.gateway.create_payment_from_source",
         side_effect=PayMongoError("declined"),
     )
     def test_failed_collection_leaves_the_order_unpaid_and_asks_for_a_retry(self, _p):
@@ -535,7 +535,7 @@ class WebhookIdempotencyTests(PaymentTestBase):
         )
         self.assertEqual(pending_logs.count(), 1)
 
-    @patch("payments.views.create_payment_from_source")
+    @patch("payments.gateway.create_payment_from_source")
     def test_chargeable_then_paid_settles_once(self, create_payment):
         """Both events arrive in the real flow; only the first may act."""
         create_payment.return_value = {"payment_id": PAYMENT_ID, "status": "paid"}
@@ -547,7 +547,7 @@ class WebhookIdempotencyTests(PaymentTestBase):
         self.assertEqual(Invoice.objects.count(), 1)
         self.assertEqual(create_payment.call_count, 1)
 
-    @patch("payments.views.create_payment_from_source")
+    @patch("payments.gateway.create_payment_from_source")
     def test_repeated_chargeable_collects_only_once(self, create_payment):
         create_payment.return_value = {"payment_id": PAYMENT_ID, "status": "paid"}
 
@@ -562,7 +562,7 @@ class WebhookIdempotencyTests(PaymentTestBase):
         self.assertEqual(responses[1].data["status"], "already_paid")
         self.assertEqual(responses[2].data["status"], "already_paid")
 
-    @patch("payments.views.create_payment_from_source")
+    @patch("payments.gateway.create_payment_from_source")
     def test_settled_order_is_still_matchable_by_its_source_id(self, create_payment):
         """Settlement overwrites the source id with the payment id."""
         create_payment.return_value = {"payment_id": PAYMENT_ID, "status": "paid"}

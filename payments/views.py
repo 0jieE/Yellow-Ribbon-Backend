@@ -28,16 +28,17 @@ from . import maya
 from .gateway import (
     PayMongoError,
     create_gcash_source,
-    create_payment_from_source,
     retrieve_source_status,
 )
 from .models import Invoice, Provider
 from .services import (
+    collect_gcash_source,
     issue_invoice,
     mark_payment_failed,
     provider_for,
     settle_payment,
     sync_maya_order,
+    sync_order_payment,
 )
 from .signature import verify_signature
 
@@ -334,9 +335,10 @@ def sync(request):
     POST /api/payments/sync/ — body {"order_id": N}
 
     Re-checks an order's payment with the gateway and settles it if paid. For
-    Maya (no webhook) this is how a payment lands when the browser was closed:
-    the app calls it on the return deep link and while polling an unpaid order.
-    Other orders just report their current state.
+    Maya (no webhook) this is how a payment lands when the browser was closed;
+    for GCash it settles a payment whose webhook never arrived. The apps call
+    it on the return deep link and while polling an unpaid order. Cash orders
+    just report their current state.
     """
     order_id = request.data.get("order_id")
     if order_id is None:
@@ -351,13 +353,14 @@ def sync(request):
             {"error": "No Order matches the given query."}, status=http.HTTP_404_NOT_FOUND
         )
 
-    result = {"state": "", "settled": False, "gateway_status": ""}
-    if order.payment_type == PaymentType.MAYA and order.payment_status != PaymentStatus.PAID:
-        try:
-            result = sync_maya_order(order)
-        except maya.MayaError as exc:
-            logger.warning("Maya sync failed for %s: %s", order.order_number, exc)
-            return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
+    try:
+        result = sync_order_payment(order)
+    except (maya.MayaError, PayMongoError) as exc:
+        logger.warning("Payment sync failed for %s: %s", order.order_number, exc)
+        return Response({"error": str(exc)}, status=http.HTTP_502_BAD_GATEWAY)
+    if result is None:
+        result = {"state": "", "settled": False, "gateway_status": ""}
+    else:
         order.refresh_from_db()
 
     invoice = Invoice.objects.filter(order=order).first()
@@ -606,15 +609,12 @@ def webhook(request):
             {"status": "already_paid", "order_number": order.order_number}
         )
 
-    payment_id = ""
     if event_type in CHARGEABLE_EVENTS:
-        # A chargeable source is authorisation, not money. Collect it.
+        # A chargeable source is authorisation, not money. Collect it, under
+        # the same lock the app's sync uses, so the two never collect twice.
         source_id = next((i for i in ids if i.startswith("src_")), None)
         try:
-            payment = create_payment_from_source(
-                source_id, order.total, description=order.order_number
-            )
-            payment_id = payment["payment_id"]
+            invoice, changed = collect_gcash_source(order, source_id)
         except PayMongoError as exc:
             # 502 asks PayMongo to retry; the order stays pending_payment.
             logger.warning(
@@ -626,8 +626,7 @@ def webhook(request):
             )
     else:
         payment_id = next((i for i in ids if i.startswith("pay_")), "")
-
-    invoice, changed = settle_payment(order, payment_id=payment_id)
+        invoice, changed = settle_payment(order, payment_id=payment_id)
 
     return Response(
         {

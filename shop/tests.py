@@ -201,6 +201,33 @@ class OrderPageTests(ShopBase):
     def url(self, order):
         return reverse("shop:order", args=[order.pk])
 
+    def test_an_order_awaiting_gcash_or_maya_polls_the_payment_sync(self):
+        for payment_type in (PaymentType.GCASH, PaymentType.MAYA):
+            order = make_order(self.customer, payment_type=payment_type, status=OrderStatus.PENDING_PAYMENT)
+            config = self.client.get(self.url(order)).context["track_config"]
+            self.assertEqual(config["syncUrl"], reverse("payments:sync"), payment_type)
+            self.assertEqual(config["orderId"], order.pk)
+
+    def test_a_cash_or_paid_order_does_not_poll_the_sync(self):
+        cash = make_order(self.customer)
+        paid = make_order(self.customer, payment_type=PaymentType.GCASH, payment_status=PaymentStatus.PAID)
+        for order in (cash, paid):
+            self.assertIsNone(self.client.get(self.url(order)).context["track_config"]["syncUrl"])
+
+    def test_the_sync_accepts_the_web_apps_session_with_its_csrf_token(self):
+        from django.test import Client
+
+        browser = Client(enforce_csrf_checks=True)
+        browser.force_login(self.user)
+        order = make_order(self.customer)
+        page = browser.get(self.url(order))
+        token = page.context["csrf_token"]
+        url = reverse("payments:sync")
+        body = json.dumps({"order_id": order.pk})
+        self.assertEqual(browser.post(url, body, content_type="application/json").status_code, 403)
+        response = browser.post(url, body, content_type="application/json", HTTP_X_CSRFTOKEN=str(token))
+        self.assertEqual(response.status_code, 200)
+
     def test_the_page_shows_progress_and_polls_the_api(self):
         order = make_order(self.customer, status=OrderStatus.PREPARING)
         response = self.client.get(self.url(order))
@@ -284,7 +311,7 @@ class PaymentReturnTests(ShopBase):
         def mark_paid(o):
             Order.objects.filter(pk=o.pk).update(payment_status=PaymentStatus.PAID, status=OrderStatus.PENDING)
 
-        with patch("shop.views.sync_maya_order", side_effect=mark_paid) as sync:
+        with patch("shop.views.sync_order_payment", side_effect=mark_paid) as sync:
             response = self.land("success", str(order.pk))
         sync.assert_called_once()
         page = self.client.get(response.url)
@@ -293,7 +320,7 @@ class PaymentReturnTests(ShopBase):
     def test_maya_being_down_does_not_break_the_return(self):
         self.sign_in()
         order = make_order(self.customer, payment_type=PaymentType.MAYA, status=OrderStatus.PENDING_PAYMENT)
-        with patch("shop.views.sync_maya_order", side_effect=maya.MayaError("down")):
+        with patch("shop.views.sync_order_payment", side_effect=maya.MayaError("down")):
             response = self.land("success", str(order.pk))
         self.assertRedirects(response, reverse("shop:order", args=[order.pk]), fetch_redirect_response=False)
 

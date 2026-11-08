@@ -1,6 +1,7 @@
 /* Order page: keep the order current without a manual refresh.
    Polls the same order endpoint the Android app uses (signed in by the
-   session). When the status changes the page reloads to show it; while the
+   session), or the payment sync while an online payment is awaited. When the
+   status changes the page reloads to show it; while the
    order is on its way, a map shows the rider moving towards the address. */
 (function () {
     var config = JSON.parse(document.getElementById("track-config").textContent);
@@ -66,7 +67,31 @@
         noteEl.textContent = (loc.rider_name ? loc.rider_name + " is" : "Your rider is") + " on the way. The map updates by itself.";
     }
 
+    // Awaiting an online payment: ask the gateway itself (it settles a GCash
+    // payment whose webhook went missing, and every Maya payment).
+    function syncPayment() {
+        var csrf = document.querySelector('meta[name="csrf-token"]').content;
+        fetch(config.syncUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": csrf },
+            body: JSON.stringify({ order_id: config.orderId }),
+        })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (result) {
+                if (!result) return;
+                if (result.order_status !== config.status || result.payment_status !== config.paymentStatus) {
+                    window.location.reload();
+                }
+            })
+            .catch(function () {});
+    }
+
     function check() {
+        if (config.syncUrl) {
+            syncPayment();
+            return;
+        }
         fetch(config.orderUrl, { credentials: "same-origin", headers: { Accept: "application/json" } })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (order) {
@@ -84,7 +109,7 @@
         if (FINISHED.indexOf(config.status) !== -1) return;
         stop();
         check();
-        timer = setInterval(check, config.status === "out_for_delivery" ? 8000 : 15000);
+        timer = setInterval(check, config.status === "out_for_delivery" || config.syncUrl ? 8000 : 15000);
     }
 
     function stop() {

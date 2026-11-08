@@ -15,7 +15,7 @@ from core.notifications import notify_new_order
 from orders.admin_api import apply_status_change
 from orders.constants import OrderStatus, PaymentStatus, PaymentType
 
-from . import maya
+from . import gateway, maya
 from .fees import split
 from .models import Invoice, Provider, next_invoice_number
 
@@ -163,6 +163,106 @@ def record_cod_payment(order, changed_by=None):
 
 class SyncResult(dict):
     """What a sync found: state, whether this call settled it, gateway status."""
+
+
+# GCash source statuses, as PayMongo reports them.
+GCASH_COLLECTED = {"paid", "consumed"}
+GCASH_DEAD = {"cancelled", "expired", "failed"}
+
+
+def collect_gcash_source(order, source_id):
+    """
+    Take the money for a chargeable GCash source and settle the order, once.
+
+    The webhook (source.chargeable) and the app's sync both end up here, and
+    may do so at the same moment. The order and invoice rows are locked, in
+    the same order settle_payment locks them, while PayMongo is asked to
+    collect, so whichever comes second finds the invoice paid and collects
+    nothing.
+
+    Returns (invoice, changed). Raises gateway.PayMongoError when PayMongo
+    will not collect; nothing is written then.
+    """
+    with transaction.atomic():
+        locked = type(order).objects.select_for_update().get(pk=order.pk)
+        invoice = Invoice.objects.select_for_update().get(order=locked)
+        if invoice.paid_at is not None:
+            return invoice, False
+        payment = gateway.create_payment_from_source(
+            source_id, locked.total, description=locked.order_number
+        )
+        return settle_payment(locked, payment_id=payment["payment_id"])
+
+
+def sync_gcash_order(order):
+    """
+    Ask PayMongo where this order's GCash payment stands and act on it.
+
+    The webhook normally settles GCash, but a webhook can be missed (the
+    server asleep, a wrong secret, PayMongo giving up on it). This lets the
+    app's poll, the payment return and the stale-order reaper heal that. It
+    acts only on what PayMongo itself reports, for the order's exact amount.
+
+    Returns SyncResult like sync_maya_order, with gateway_status the source's
+    status. Raises gateway.PayMongoError when PayMongo cannot be asked.
+    """
+    invoice = Invoice.objects.filter(order=order).first()
+    if invoice is not None and invoice.paid_at is not None:
+        return SyncResult(state="paid", settled=False, gateway_status="paid")
+    source_id = invoice.paymongo_payment_id if invoice is not None else ""
+    if not source_id.startswith("src_"):
+        return SyncResult(state="no_checkout", settled=False, gateway_status="")
+
+    source = gateway.retrieve_source(source_id)
+    status = source["status"]
+
+    if status == "chargeable" or status in GCASH_COLLECTED:
+        if source["amount_centavos"] != gateway.to_centavos(order.total):
+            logger.error(
+                "PayMongo source %s for %s is for %s centavos but the order total is %s; "
+                "not settling.",
+                source_id, order.order_number, source["amount_centavos"], order.total,
+            )
+            return SyncResult(state="failed", settled=False, gateway_status="amount_mismatch")
+
+    if status == "chargeable":
+        _, changed = collect_gcash_source(order, source_id)
+        return SyncResult(state="paid", settled=changed, gateway_status=status)
+
+    if status in GCASH_COLLECTED:
+        # Collected already, but whatever collected it never settled the order.
+        payment = gateway.find_payment_for_source(source_id)
+        if payment is None:
+            logger.warning(
+                "%s: source %s is %s but its payment was not found; settling without "
+                "a payment id (a refund would need doing by hand).",
+                order.order_number, source_id, status,
+            )
+        _, changed = settle_payment(order, payment_id=payment["payment_id"] if payment else "")
+        return SyncResult(state="paid", settled=changed, gateway_status=status)
+
+    if status in GCASH_DEAD:
+        mark_payment_failed(order)
+        return SyncResult(state="failed", settled=False, gateway_status=status)
+
+    return SyncResult(state="pending", settled=False, gateway_status=status)
+
+
+def sync_order_payment(order):
+    """
+    Re-check an unpaid online order with its gateway (Maya or GCash).
+
+    Returns a SyncResult, or None for an order there is nothing to ask about
+    (cash, or already paid). Raises maya.MayaError or gateway.PayMongoError
+    when the gateway cannot be asked.
+    """
+    if order.payment_status == PaymentStatus.PAID:
+        return None
+    if order.payment_type == PaymentType.MAYA:
+        return sync_maya_order(order)
+    if order.payment_type == PaymentType.GCASH:
+        return sync_gcash_order(order)
+    return None
 
 
 def sync_maya_order(order):

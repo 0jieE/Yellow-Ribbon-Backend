@@ -163,20 +163,48 @@ def create_gcash_source(order, success_url=None, failed_url=None):
     }
 
 
+def retrieve_source(source_id):
+    """
+    A GCash source: {"status", "amount_centavos"}. Status is one of pending,
+    chargeable, paid (or consumed), cancelled, expired or failed.
+    """
+    body = _get(f"{SOURCES_URL}/{source_id}")
+    attributes = (body.get("data") or {}).get("attributes") or {}
+    status = attributes.get("status")
+    if not status:
+        raise PayMongoError("PayMongo did not return the payment status.")
+    return {"status": status, "amount_centavos": attributes.get("amount")}
+
+
 def retrieve_source_status(source_id):
     """
-    Where a GCash source stands: pending, chargeable, paid, cancelled,
-    expired or failed.
+    Where a GCash source stands (see retrieve_source).
 
     Checkout asks before reusing a source. Tapping "Fail" on PayMongo's test
     page fires no webhook we subscribe to, so this is the only way to learn
     that a stored checkout link is dead.
     """
-    body = _get(f"{SOURCES_URL}/{source_id}")
-    status = ((body.get("data") or {}).get("attributes") or {}).get("status")
-    if not status:
-        raise PayMongoError("PayMongo did not return the payment status.")
-    return status
+    return retrieve_source(source_id)["status"]
+
+
+def find_payment_for_source(source_id):
+    """
+    The payment already collected against a source, or None.
+
+    For a source that reads paid/consumed when our side never recorded the
+    payment (the request that collected it died before settling). PayMongo
+    has no lookup by source, so this searches the latest 100 payments.
+    """
+    body = _get(f"{PAYMENTS_URL}?limit=100")
+    for item in body.get("data") or []:
+        attributes = item.get("attributes") or {}
+        if (attributes.get("source") or {}).get("id") == source_id and item.get("id"):
+            return {
+                "payment_id": item["id"],
+                "status": attributes.get("status", ""),
+                "amount_centavos": attributes.get("amount"),
+            }
+    return None
 
 
 REFUNDS_URL = f"{API_ROOT}/refunds"

@@ -23,8 +23,9 @@ from django.utils import timezone
 from orders.admin_api import apply_status_change
 from orders.constants import OrderStatus, PaymentType
 from orders.models import Order
+from payments.gateway import PayMongoError
 from payments.maya import MayaError
-from payments.services import sync_maya_order
+from payments.services import sync_order_payment
 
 
 class Command(BaseCommand):
@@ -77,19 +78,19 @@ class Command(BaseCommand):
 
         cancelled = 0
         for order in stale:
-            if order.payment_type == PaymentType.MAYA:
-                # Maya has no webhook, so a customer who paid and then closed
-                # the app is only known to be paid if we ask. Do that first:
-                # cancelling a paid order would take their money for nothing.
-                try:
-                    sync_maya_order(order)
-                except MayaError as exc:
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  skipped {order.order_number}: could not check Maya ({exc})"
-                        )
+            # Maya has no webhook and a GCash webhook can go missing, so a
+            # customer who paid is only known to be paid if we ask. Do that
+            # first: cancelling a paid order would take their money for nothing.
+            try:
+                sync_order_payment(order)
+            except (MayaError, PayMongoError) as exc:
+                gateway_name = "Maya" if order.payment_type == PaymentType.MAYA else "PayMongo"
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  skipped {order.order_number}: could not check {gateway_name} ({exc})"
                     )
-                    continue
+                )
+                continue
 
             with transaction.atomic():
                 # Re-read under lock: the webhook may have just paid for it.

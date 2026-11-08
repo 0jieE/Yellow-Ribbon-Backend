@@ -34,7 +34,8 @@ from orders.models import Order
 from orders.serializers import OrderCreateSerializer, payment_summary
 from orders.views import cancel_for_customer
 from payments import maya
-from payments.services import sync_maya_order
+from payments.gateway import PayMongoError
+from payments.services import sync_order_payment
 from payments.views import start_checkout
 
 from .cart import Cart
@@ -282,7 +283,12 @@ def order_detail(request, pk):
         "live": order.status in LIVE_STATUSES,
         "track_config": {
             "orderUrl": reverse("orders:order-detail", args=[order.pk]),
+            # While it awaits an online payment the page asks the gateway too,
+            # so a GCash payment whose webhook went missing still lands.
+            "syncUrl": reverse("payments:sync") if can_pay else None,
+            "orderId": order.pk,
             "status": order.status,
+            "paymentStatus": order.payment_status,
             "destination": [float(order.delivery_latitude), float(order.delivery_longitude)],
         },
         "tab": "orders",
@@ -309,12 +315,11 @@ def payment_return(request, outcome):
     if order is None:
         return render(request, "shop/payment_return.html", {"outcome": outcome})
 
-    if order.payment_type == PaymentType.MAYA and order.payment_status != PaymentStatus.PAID:
-        try:
-            sync_maya_order(order)
-            order.refresh_from_db()
-        except maya.MayaError as exc:
-            logger.warning("Maya sync on web return failed for %s: %s", order.order_number, exc)
+    try:
+        sync_order_payment(order)
+    except (maya.MayaError, PayMongoError) as exc:
+        logger.warning("Payment sync on web return failed for %s: %s", order.order_number, exc)
+    order.refresh_from_db()
 
     if order.payment_status == PaymentStatus.PAID:
         messages.success(request, f"Payment received for {order.order_number}. The kitchen has your order.")

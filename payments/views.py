@@ -4,10 +4,11 @@ import json
 import logging
 import uuid
 from datetime import timedelta
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.conf import settings
 from django.utils import timezone
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status as http
@@ -74,6 +75,17 @@ def checkout(request):
             status=http.HTTP_404_NOT_FOUND,
         )
 
+    return start_checkout(request, order, web=_is_web_checkout(request))
+
+
+def start_checkout(request, order, web=False):
+    """
+    Open (or reuse) the gateway checkout for one of the caller's orders.
+
+    Shared by the API above and the customer web app (`shop`), which passes
+    web=True so the gateway sends the customer back to it. Returns a DRF
+    Response: `.data` holds checkout_url on success, or "error".
+    """
     if order.payment_type == PaymentType.COD:
         return Response(
             {"error": "This order is cash on delivery; there is nothing to pay online."},
@@ -97,8 +109,9 @@ def checkout(request):
             {"error": f"{order.order_number} has already been paid."},
             status=http.HTTP_400_BAD_REQUEST,
         )
+    web = web and bool(settings.PWA_BASE_URL)
     if order.payment_type == PaymentType.MAYA:
-        return _maya_checkout(request, order, existing)
+        return _maya_checkout(request, order, existing, web=web)
 
     if existing is not None and existing.paymongo_checkout_url:
         source_status = "pending"
@@ -150,6 +163,9 @@ def checkout(request):
     failed_url = settings.PAYMONGO_FAILED_REDIRECT_URL or request.build_absolute_uri(
         reverse("payments:return-failed")
     )
+    if web:
+        success_url = _web_return_url(success_url, order)
+        failed_url = _web_return_url(failed_url, order)
 
     try:
         source = create_gcash_source(order, success_url, failed_url)
@@ -190,7 +206,20 @@ def checkout(request):
     )
 
 
-def _maya_checkout(request, order, existing):
+def _is_web_checkout(request):
+    """Checkout from the customer web app (PWA), which wants to land back on itself."""
+    return request.data.get("client") == "web" and bool(settings.PWA_BASE_URL)
+
+
+def _web_return_url(url, order):
+    """`url` with client=web&order=<id> added, keeping any query it already has."""
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    query += [("client", "web"), ("order", str(order.pk))]
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _maya_checkout(request, order, existing, web=False):
     """
     The Maya half of checkout: open (or reuse) a Maya Checkout for the order.
 
@@ -250,6 +279,9 @@ def _maya_checkout(request, order, existing):
     rrn = uuid.uuid4().hex
     success_url = request.build_absolute_uri(reverse("payments:return-success")) + f"?rrn={rrn}"
     failed_url = request.build_absolute_uri(reverse("payments:return-failed")) + f"?rrn={rrn}"
+    if web:
+        success_url = _web_return_url(success_url, order)
+        failed_url = _web_return_url(failed_url, order)
 
     try:
         checkout_info = maya.create_checkout(order, rrn, success_url, failed_url, failed_url)
@@ -389,6 +421,20 @@ def _verify_maya_return(rrn):
         return "unknown"
 
 
+def _web_return(request, outcome):
+    """
+    For a payment started in the PWA, a redirect back into it; otherwise None.
+
+    The destination is built from PWA_BASE_URL and a numeric order id only,
+    so these pages cannot be used to redirect anywhere else.
+    """
+    order = request.GET.get("order", "")
+    plain_number = order.isascii() and order.isdigit()
+    if request.GET.get("client") != "web" or not plain_number or not settings.PWA_BASE_URL:
+        return None
+    return HttpResponseRedirect(f"{settings.PWA_BASE_URL}/payment/{outcome}?order={int(order)}")
+
+
 def _success_page():
     return HttpResponse(
         RETURN_PAGE.format(
@@ -428,9 +474,9 @@ def return_success(request):
     fact that the customer arrived at a "success" URL.
     """
     rrn = request.GET.get("rrn")
-    if rrn and _verify_maya_return(rrn) == "failed":
-        return _failed_page()
-    return _success_page()
+    paid = not (rrn and _verify_maya_return(rrn) == "failed")
+    outcome = "success" if paid else "failed"
+    return _web_return(request, outcome) or (_success_page() if paid else _failed_page())
 
 
 @csrf_exempt
@@ -442,9 +488,9 @@ def return_failed(request):
     checked: if Maya says paid, they get the success page.
     """
     rrn = request.GET.get("rrn")
-    if rrn and _verify_maya_return(rrn) == "paid":
-        return _success_page()
-    return _failed_page()
+    paid = bool(rrn) and _verify_maya_return(rrn) == "paid"
+    outcome = "success" if paid else "failed"
+    return _web_return(request, outcome) or (_success_page() if paid else _failed_page())
 
 
 def _collect_ids(node, found):

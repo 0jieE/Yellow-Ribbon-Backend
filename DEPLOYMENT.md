@@ -118,6 +118,19 @@ disk, where they will not survive a deploy. Set all three.
 | `FIREBASE_CREDENTIALS_JSON` | The whole service-account JSON **on one line**. Do not use `FIREBASE_CREDENTIALS_PATH` — there is no file to point at. |
 | `APP_RELEASE_PUBLISH_TOKEN` | A long random secret; the same value is the `APP_RELEASE_PUBLISH_TOKEN` secret in the mobile repo's GitHub settings. Unset, GitHub cannot publish app updates (section 10). Make one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 
+### Customer web app (iPhone PWA)
+
+The customer web app is part of this server, at `/order/` (the `shop` app), so
+it needs no separate hosting and no CORS entry. iPhone customers open
+`https://yellow-ribbon-backend.onrender.com/order/` in Safari, tap Share, then
+Add to Home Screen. Notifications work once it is opened from the Home Screen
+(iOS 16.4 or later).
+
+| Name | Value |
+|---|---|
+| `PWA_BASE_URL` | `https://yellow-ribbon-backend.onrender.com/order` (no trailing slash). Turns on web push (icon, and tapping opens the order) and sends a customer who paid from the web app back to it. Blank turns both off. It must be `https://`; anything else switches web push off so it cannot break Android pushes. |
+| `FIREBASE_WEB_VAPID_KEY` | Optional. The "Web Push certificates" key pair from Firebase console > Project settings > Cloud Messaging. Unset, Firebase's default key is used. |
+
 ### Business rules (optional; defaults shown in `.env.example`)
 
 `RIDER_EARNINGS_PER_DELIVERY`, `PENDING_PAYMENT_TIMEOUT_MINUTES`,

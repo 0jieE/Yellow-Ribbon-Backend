@@ -1,0 +1,23 @@
+{% extends "shop/base.html" %}
+
+{% block title %}Orders{% endblock %}
+
+{% block content %}
+<h1>Your orders</h1>
+{% if orders %}
+<ul class="order-list">
+    {% for order in orders %}
+    <li>
+        <a href="{% url 'shop:order' order.pk %}">
+            <span class="order-no">{{ order.order_number }}</span>
+            <span class="status status--{{ order.status }}">{{ order.get_status_display }}</span>
+            <span class="muted">{{ order.placed_at|date:"M j, g:i A" }}</span>
+            <span class="order-total">₱{{ order.total|floatformat:2 }}</span>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No orders yet. <a href="{% url 'shop:menu' %}">Order your first pizza</a>.</p>
+{% endif %}
+{% endblock %}

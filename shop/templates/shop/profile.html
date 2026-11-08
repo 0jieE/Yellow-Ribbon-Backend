@@ -1,0 +1,48 @@
+{% extends "shop/base.html" %}
+{% load static %}
+
+{% block title %}Profile{% endblock %}
+
+{% block content %}
+<h1>Hi, {{ user.first_name|default:user.username }}</h1>
+
+<section class="group push-card" data-push-card>
+    <h2>Notifications</h2>
+    <p>Get a notification when your order is confirmed and when the rider is on the way.</p>
+    <button type="button" class="btn btn--small" data-push-on{% if push_on %} hidden{% endif %}>Turn on notifications</button>
+    <p class="muted fine" data-push-status aria-live="polite">{% if push_on %}Notifications are on for this phone.{% endif %}</p>
+</section>
+
+<form method="post" class="form group">
+    {% csrf_token %}
+    <h2>Your details</h2>
+    {% for field in form %}
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% for e in field.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+    {% endfor %}
+    <button type="submit" class="btn btn--small">Save details</button>
+</form>
+
+{% if customer.default_address %}
+<section class="group">
+    <h2>Usual address</h2>
+    <p>{{ customer.default_address }}</p>
+    <p class="muted fine">Changed when you tick "Save this as my usual address" at checkout.</p>
+</section>
+{% endif %}
+
+<section class="group">
+    <h2>App</h2>
+    <p class="muted">Signed in as {{ user.username }}.</p>
+    <form method="post" action="{% url 'shop:sign-out' %}">{% csrf_token %}
+        <button type="submit" class="btn btn--ghost btn--small">Sign out</button>
+    </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://www.gstatic.com/firebasejs/{{ firebase_version }}/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/{{ firebase_version }}/firebase-messaging-compat.js"></script>
+<script src="{% static 'shop/js/push.js' %}"></script>
+{% endblock %}

@@ -34,6 +34,8 @@ env = environ.Env(
     MAYA_BASE_URL=(str, "https://pg-sandbox.paymaya.com"),
     MAYA_TIMEOUT_SECONDS=(float, 15.0),
     APP_RELEASE_PUBLISH_TOKEN=(str, ""),
+    PWA_BASE_URL=(str, ""),
+    FIREBASE_WEB_VAPID_KEY=(str, ""),
     APP_RELEASE_URL_PREFIX=(str, "https://github.com/0jieE/yellow-Ribbon-Mobile/releases/download/"),
     PAYMONGO_PUBLIC_KEY=(str, ""),
     PAYMONGO_SECRET_KEY=(str, ""),
@@ -91,6 +93,7 @@ INSTALLED_APPS = [
     "delivery",
     "payments",
     "website",
+    "shop",
 ]
 
 MIDDLEWARE = [
@@ -121,6 +124,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # The customer web app (/order/ only): cart badge, push setup.
+                "shop.cart.cart_count",
+                "shop.views.push_context",
             ],
         },
     },
@@ -374,6 +380,27 @@ MAYA_TIMEOUT_SECONDS = env("MAYA_TIMEOUT_SECONDS")
 # update prompt at another site.
 APP_RELEASE_PUBLISH_TOKEN = env("APP_RELEASE_PUBLISH_TOKEN")
 APP_RELEASE_URL_PREFIX = env("APP_RELEASE_URL_PREFIX")
+
+# The customer web app (PWA) for iPhones, served by this site at /order/:
+# https://yellow-ribbon-backend.onrender.com/order in production.
+# Used for web push (icon, and where tapping a notification goes) and to send
+# a web customer back to the PWA after paying. Blank turns both off. Redirects
+# are only ever built from this setting, never from the request.
+PWA_BASE_URL = env("PWA_BASE_URL").rstrip("/")
+
+# Firebase's config for the customer web app (registered in the Firebase
+# project as "yellowribbon-customer-web"). Not a secret: Firebase web config
+# is public by design and ships inside every page that uses it. The VAPID key
+# is optional; without it the Firebase SDK uses its default key.
+FIREBASE_WEB_CONFIG = {
+    "apiKey": "AIzaSyAMsQ2ViXNNLNJqgN4GxdDZDGk5IU-P3Io",
+    "authDomain": "delivery-ab221.firebaseapp.com",
+    "projectId": "delivery-ab221",
+    "storageBucket": "delivery-ab221.firebasestorage.app",
+    "messagingSenderId": "270123662015",
+    "appId": "1:270123662015:web:16a7210267a4ac3839640a",
+}
+FIREBASE_WEB_VAPID_KEY = env("FIREBASE_WEB_VAPID_KEY")
 
 PAYMONGO_PUBLIC_KEY = env("PAYMONGO_PUBLIC_KEY")
 PAYMONGO_SECRET_KEY = env("PAYMONGO_SECRET_KEY")

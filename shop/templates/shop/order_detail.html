@@ -1,0 +1,100 @@
+{% extends "shop/base.html" %}
+{% load static %}
+
+{% block title %}{{ order.order_number }}{% endblock %}
+
+{% block head %}
+{% if live %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">{% endif %}
+{% endblock %}
+
+{% block bar_action %}<a class="bar-link" href="{% url 'shop:orders' %}">All orders</a>{% endblock %}
+
+{% block content %}
+<header class="order-head">
+    <h1>{{ order.order_number }}</h1>
+    <span class="status status--{{ order.status }}" id="status-label">{{ order.get_status_display }}</span>
+</header>
+
+{% if order.status == "pending_payment" %}
+    <div class="callout">
+        <p><strong>Waiting for your {{ order.get_payment_type_display }} payment.</strong>
+           The kitchen starts once it is paid. Unpaid orders are cancelled after a while.</p>
+        {% if can_pay %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="pay">
+            <button type="submit" class="btn btn--wide">Pay ₱{{ order.total|floatformat:2 }} with {{ order.get_payment_type_display }}</button>
+        </form>
+        {% endif %}
+    </div>
+{% elif order.status == "cancelled" %}
+    <div class="callout callout--muted">
+        <p><strong>This order was cancelled</strong>{% if order.cancel_reason %}: {{ order.cancel_reason }}{% endif %}.</p>
+        {% if payment.refund %}<p>Refund: {{ payment.refund.status }}{% if payment.refund.amount %} of ₱{{ payment.refund.amount }}{% endif %}.</p>{% endif %}
+    </div>
+{% endif %}
+
+{% if steps %}
+<ol class="progress" aria-label="Order progress">
+    {% for step in steps %}
+    <li class="{% if step.done %}done{% endif %}{% if step.current %} current{% endif %}"{% if step.current %} aria-current="step"{% endif %}>{{ step.label }}</li>
+    {% endfor %}
+</ol>
+{% endif %}
+
+{% if order.eta_minutes and order.status == "out_for_delivery" %}
+<p class="eta" id="eta">Arriving in about {{ order.eta_minutes }} min</p>
+{% else %}
+<p class="eta" id="eta" hidden></p>
+{% endif %}
+
+{% if live %}
+<div class="map-wrap map-wrap--track" id="track-wrap"{% if order.status != "out_for_delivery" %} hidden{% endif %}>
+    <div id="track-map" class="map" aria-label="Map with your rider and your address"></div>
+</div>
+<p class="muted fine" id="track-note">{% if order.status == "out_for_delivery" %}The map follows your rider. It updates by itself.{% else %}This page updates by itself.{% endif %}</p>
+{% endif %}
+
+<section class="group">
+    <h2>Items</h2>
+    <ul class="summary">
+        {% for line in items %}<li><span>{{ line.quantity }} × {{ line.menu.name }}</span><span>₱{{ line.line_subtotal|floatformat:2 }}</span></li>{% endfor %}
+    </ul>
+    <dl class="totals">
+        <div><dt>Subtotal</dt><dd>₱{{ order.subtotal|floatformat:2 }}</dd></div>
+        <div><dt>Delivery</dt><dd>₱{{ order.delivery_fee|floatformat:2 }}</dd></div>
+        <div class="grand"><dt>Total</dt><dd>₱{{ order.total|floatformat:2 }}</dd></div>
+    </dl>
+</section>
+
+<section class="group">
+    <h2>Delivery</h2>
+    <p>{{ order.delivery_address }}</p>
+    {% if order.delivery_notes %}<p class="muted">{{ order.delivery_notes }}</p>{% endif %}
+    <p class="muted">Paying with {{ order.get_payment_type_display }}{% if order.payment_status == "paid" %}: paid{% endif %}.
+        {% if payment.invoice_number %}Invoice {{ payment.invoice_number }}.{% endif %}</p>
+</section>
+
+{% if order.is_cancellable_by_customer %}
+<form method="post" class="cancel-form" onsubmit="return confirm('Cancel {{ order.order_number }}?');">
+    {% csrf_token %}<input type="hidden" name="action" value="cancel">
+    <button type="submit" class="link-button danger">Cancel this order</button>
+</form>
+{% endif %}
+
+<div class="push-card" data-push-card hidden>
+    <p>Get a notification when your order is confirmed and when the rider is on the way.</p>
+    <button type="button" class="btn btn--small" data-push-on>Turn on notifications</button>
+    <p class="muted fine" data-push-status aria-live="polite"></p>
+</div>
+
+{{ track_config|json_script:"track-config" }}
+{% endblock %}
+
+{% block scripts %}
+{% if live %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="{% static 'shop/js/track.js' %}"></script>
+{% endif %}
+<script src="https://www.gstatic.com/firebasejs/{{ firebase_version }}/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/{{ firebase_version }}/firebase-messaging-compat.js"></script>
+<script src="{% static 'shop/js/push.js' %}"></script>
+{% endblock %}

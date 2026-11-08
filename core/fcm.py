@@ -183,6 +183,32 @@ def _android_config(messaging):
     )
 
 
+def _webpush_config(messaging, data=None):
+    """
+    How a push looks and where it leads on the customer web app (PWA).
+
+    Only web tokens read this; Android ignores it. None when no PWA is
+    configured. Every push already carries a visible notification, which iOS
+    insists on for web push (a data-only push would get the PWA's push
+    permission revoked).
+    """
+    base = settings.PWA_BASE_URL
+    if not base.startswith("https://"):
+        # Firebase rejects a non-HTTPS link, and the rejection fails the whole
+        # send (Android tokens included), so a local http:// PWA gets none.
+        return None
+    order_id = str((data or {}).get("order_id") or "")
+    link = f"{base}/orders/{order_id}" if order_id.isdigit() else f"{base}/"
+    return messaging.WebpushConfig(
+        headers={"Urgency": "high"},
+        notification=messaging.WebpushNotification(
+            icon=f"{base}/icons/icon-192.png",
+            badge=f"{base}/icons/badge-72.png",
+        ),
+        fcm_options=messaging.WebpushFCMOptions(link=link),
+    )
+
+
 def _dispatch(tokens, title, body, data):
     """The actual send. Called after commit; never raises."""
     try:
@@ -198,6 +224,7 @@ def _dispatch(tokens, title, body, data):
             # FCM data values must all be strings.
             data={k: str(v) for k, v in (data or {}).items()},
             android=_android_config(messaging),
+            webpush=_webpush_config(messaging, data),
         )
 
         response = messaging.send_each_for_multicast(message)
@@ -324,6 +351,7 @@ def send_test_push(targets):
                         ),
                         data={"type": "test", "event": "test"},
                         android=_android_config(messaging),
+                        webpush=_webpush_config(messaging),
                     )
                 )
                 results.append((label, True, "sent"))

@@ -1,0 +1,14 @@
+{% extends "shop/base.html" %}
+
+{% block title %}{% if outcome == "success" %}Payment received{% else %}Payment not completed{% endif %}{% endblock %}
+
+{% block content %}
+{% if outcome == "success" %}
+    <h1>Payment received</h1>
+    <p>Thanks! Your order is being confirmed. Go back to the Yellow Ribbon app on your Home Screen: your order shows the new status there.</p>
+{% else %}
+    <h1>Payment not completed</h1>
+    <p>Your order has not been paid for. Open the Yellow Ribbon app on your Home Screen to try again or cancel the order.</p>
+{% endif %}
+<a class="btn" href="{% url 'shop:orders' %}">See my orders</a>
+{% endblock %}

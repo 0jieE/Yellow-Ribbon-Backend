@@ -195,7 +195,7 @@ class DeviceTokenEndpointTests(FcmTestBase):
     def test_constants_exposes_the_platform_enum(self):
         self.client.force_authenticate(self.cust_user)
         data = self.client.get(reverse("constants")).data
-        self.assertEqual(data["device_platform"], ["android", "ios"])
+        self.assertEqual(data["device_platform"], ["android", "ios", "web"])
 
 
 @override_settings(FIREBASE_CREDENTIALS_PATH=CREDENTIALS)

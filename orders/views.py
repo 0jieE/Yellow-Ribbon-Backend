@@ -63,49 +63,56 @@ class OrderViewSet(
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
-        with transaction.atomic():
-            # Not get_queryset(): its select_related("delivery__...") is an
-            # outer join, and Postgres refuses FOR UPDATE on the nullable side.
-            order = (
-                Order.objects.select_for_update()
-                .filter(pk=pk, customer__user=request.user)
-                .first()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        order, error = cancel_for_customer(
+            request.user, pk, serializer.validated_data.get("cancel_reason", "")
+        )
+        if order is None:
+            return Response(
+                {"error": "No Order matches the given query."},
+                status=status.HTTP_404_NOT_FOUND,
             )
-            if order is None:
-                return Response(
-                    {"error": "No Order matches the given query."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-
-            if not order.is_cancellable_by_customer:
-                return Response(
-                    {
-                        "error": (
-                            f"An order that is already {order.get_status_display().lower()} "
-                            "can no longer be cancelled. Please contact the store."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-
-            # Shares the timestamping, audit log and rider stand-down push
-            # with every other status change. The customer gets no push of
-            # their own — they are the one who pressed cancel.
-            apply_status_change(
-                order,
-                OrderStatus.CANCELLED,
-                changed_by=request.user,
-                reason=serializer.validated_data.get("cancel_reason", ""),
-                notify_customer=False,
-            )
-
-            # The kitchen may already be working on it.
-            notify_order_cancelled_by_customer(order)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+def cancel_for_customer(user, pk, reason=""):
+    """
+    Cancel one of `user`'s orders, as the customer. Returns (order, error):
+    order is None when it is not theirs; error is a sentence when it can no
+    longer be cancelled. Shared by the API and the customer web app.
+    """
+    with transaction.atomic():
+        # Not a select_related("delivery__...") queryset: that is an outer
+        # join, and Postgres refuses FOR UPDATE on the nullable side.
+        order = Order.objects.select_for_update().filter(pk=pk, customer__user=user).first()
+        if order is None:
+            return None, None
+
+        if not order.is_cancellable_by_customer:
+            return order, (
+                f"An order that is already {order.get_status_display().lower()} "
+                "can no longer be cancelled. Please contact the store."
+            )
+
+        # Shares the timestamping, audit log and rider stand-down push with
+        # every other status change. The customer gets no push of their own:
+        # they are the one who pressed cancel.
+        apply_status_change(
+            order,
+            OrderStatus.CANCELLED,
+            changed_by=user,
+            reason=reason[:255],
+            notify_customer=False,
+        )
+
+        # The kitchen may already be working on it.
+        notify_order_cancelled_by_customer(order)
+    return order, None
 
 
 @api_view(["GET"])

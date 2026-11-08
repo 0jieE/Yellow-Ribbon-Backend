@@ -38,6 +38,8 @@ urlpatterns = [
     path("api/payments/", include("payments.urls")),
     path("api/app-version/<str:app>/", website_api.app_version, name="app-version"),
     path("api/app-releases/publish/", website_api.publish_release, name="app-release-publish"),
+    # The customer web app (iPhone PWA).
+    path("order/", include("shop.urls")),
     # The public website: landing page at /, staff sign-in, APK downloads.
     path("", include("website.urls")),
 ]

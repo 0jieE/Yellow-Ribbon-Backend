@@ -1,0 +1,12 @@
+{% extends "shop/base.html" %}
+
+{% block title %}Customer accounts only{% endblock %}
+
+{% block content %}
+<h1>This app is for customers</h1>
+<p>You are signed in as <strong>{{ user.username }}</strong>, which is a rider or staff account.
+   Riders use the Ribbon Rider app, and the store is run from the admin.</p>
+<form method="post" action="{% url 'shop:sign-out' %}">{% csrf_token %}
+    <button type="submit" class="btn">Sign out and use a customer account</button>
+</form>
+{% endblock %}

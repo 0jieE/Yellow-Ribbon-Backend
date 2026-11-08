@@ -1,0 +1,61 @@
+{% extends "shop/base.html" %}
+{% load static %}
+
+{% block title %}Menu{% endblock %}
+
+{% block bar_action %}
+    {% if not user.is_authenticated %}<a class="bar-link" href="{% url 'shop:sign-in' %}">Sign in</a>{% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="intro">
+    <h1>What are you craving?</h1>
+    <p>Delivered within {{ store.service_area_radius_km|floatformat:"-2" }} km of the shop in {{ store.service_area_city }}.
+       {% if store.delivery_fee_per_km %}Delivery from ₱{{ store.delivery_fee|floatformat:"-2" }} plus ₱{{ store.delivery_fee_per_km|floatformat:"-2" }} a km.{% else %}Delivery is ₱{{ store.delivery_fee|floatformat:"-2" }}.{% endif %}</p>
+</section>
+
+<div class="install-hint" data-install-hint hidden>
+    <p><strong>Add this to your Home Screen</strong> to use it like an app and get order notifications:
+       tap <span class="share-glyph" aria-label="Share">Share</span>, then <strong>Add to Home Screen</strong>.</p>
+</div>
+
+{% if menu %}
+<ul class="dishes">
+    {% for item in menu %}
+    <li class="dish{% if not item.is_available %} is-out{% endif %}" id="item-{{ item.pk }}">
+        {% if item.photo %}
+            <img class="dish-photo" src="{{ item.photo.url }}" alt="" loading="lazy" width="88" height="88">
+        {% else %}
+            <span class="dish-photo dish-photo--none" aria-hidden="true"></span>
+        {% endif %}
+        <div class="dish-body">
+            <h2>{{ item.name }}</h2>
+            {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+            <div class="dish-foot">
+                <span class="price">₱{{ item.price|floatformat:"-2" }}</span>
+                {% if item.is_available %}
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="menu_id" value="{{ item.pk }}">
+                    <button type="submit" class="btn btn--small">Add</button>
+                </form>
+                {% else %}
+                <span class="out">Not available right now</span>
+                {% endif %}
+            </div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="empty">The menu is being updated. Check back soon.</p>
+{% endif %}
+
+{% if cart_count %}
+<a class="cart-float btn" href="{% url 'shop:cart' %}">View cart ({{ cart_count }})</a>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'shop/js/install-hint.js' %}" defer></script>
+{% endblock %}

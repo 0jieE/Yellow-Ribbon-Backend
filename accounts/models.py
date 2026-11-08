@@ -72,6 +72,7 @@ class User(AbstractUser):
 class DevicePlatform(models.TextChoices):
     ANDROID = "android", "Android"
     IOS = "ios", "iOS"
+    WEB = "web", "Web (PWA)"
 
 
 class DeviceToken(models.Model):

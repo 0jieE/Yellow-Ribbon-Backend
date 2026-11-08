@@ -1,0 +1,49 @@
+{% extends "shop/base.html" %}
+
+{% block title %}Cart{% endblock %}
+
+{% block content %}
+<h1>Your cart</h1>
+
+{% if items %}
+<ul class="lines">
+    {% for line in items %}
+    <li class="line{% if not line.menu.is_available %} is-out{% endif %}">
+        <div class="line-text">
+            <h2>{{ line.menu.name }}</h2>
+            {% if line.menu.is_available %}
+                <span class="muted">₱{{ line.menu.price|floatformat:"-2" }} each</span>
+            {% else %}
+                <span class="out">Not available right now, so it is left out of your order</span>
+            {% endif %}
+        </div>
+        <div class="stepper" role="group" aria-label="Quantity of {{ line.menu.name }}">
+            <form method="post">{% csrf_token %}
+                <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
+                <input type="hidden" name="quantity" value="{{ line.quantity|add:'-1' }}">
+                <button type="submit" aria-label="{% if line.quantity == 1 %}Remove {{ line.menu.name }}{% else %}One less{% endif %}">−</button>
+            </form>
+            <span class="qty">{{ line.quantity }}</span>
+            <form method="post">{% csrf_token %}
+                <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
+                <input type="hidden" name="quantity" value="{{ line.quantity|add:'1' }}">
+                <button type="submit" aria-label="One more"{% if not line.menu.is_available %} disabled{% endif %}>+</button>
+            </form>
+        </div>
+        <span class="line-total">₱{{ line.line_total|floatformat:"-2" }}</span>
+    </li>
+    {% endfor %}
+</ul>
+
+<dl class="totals">
+    <div><dt>Subtotal</dt><dd>₱{{ subtotal|floatformat:2 }}</dd></div>
+    <div><dt>Delivery</dt><dd>Worked out from your address at checkout</dd></div>
+</dl>
+
+{% if subtotal %}
+<a class="btn btn--wide" href="{% url 'shop:checkout' %}">Check out</a>
+{% endif %}
+{% else %}
+<p class="empty">Your cart is empty. <a href="{% url 'shop:menu' %}">Pick something from the menu</a>.</p>
+{% endif %}
+{% endblock %}

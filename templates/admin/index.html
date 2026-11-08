@@ -68,7 +68,7 @@
     {% endcomponent %}
 
     {% if request.user.is_superuser %}
-        {% component "unfold/components/card.html" with title="Database backup" title_icon="backup" description="Render's free database is deleted after a month. Keep a copy." %}
+        {% component "unfold/components/card.html" with title="Database backup" title_icon="backup" description="Keep a copy of all your data." %}
             <div class="yr-backup-form">
                 <p class="text-sm">Download every table as one file that can be loaded into a new database.</p>
                 {% url 'backup' as backup_url %}

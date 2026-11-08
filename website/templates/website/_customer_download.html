@@ -4,7 +4,7 @@
         Download the app
     </a>
     <p class="fine">
-        Android, version {{ customer_app.version }}, {{ customer_app.size_mb }} MB.
+        Android, version {{ customer_app.version }}{% if customer_app.size %}, {{ customer_app.size_mb }} MB{% endif %}.
         Your phone may ask you to allow installs from your browser; allow it once to install.
     </p>
 </div>

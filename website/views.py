@@ -1,7 +1,8 @@
 """
 The public website: the landing page, the staff sign-in, and app downloads.
 
-The customer app is free for anyone to download. The rider app (and the
+The customer app is free for anyone to download. Releases built by GitHub
+redirect to the GitHub file; an APK uploaded by hand streams from here. The rider app (and the
 admin app) only download for someone signed in with that kind of account.
 """
 
@@ -26,7 +27,7 @@ _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
 def _releases():
-    return {r.app: r for r in AppRelease.objects.filter(size__gt=0)}
+    return {r.app: r for r in AppRelease.ready()}
 
 
 @require_GET
@@ -113,9 +114,13 @@ def download(request, app):
     if not can_download(request.user, app):
         return redirect("website:staff-apps")
 
-    release = AppRelease.objects.filter(app=app, size__gt=0).first()
+    release = AppRelease.ready().filter(app=app).first()
     if release is None:
         raise Http404("This app is not available for download yet.")
+    if release.download_url:
+        # Built and hosted by GitHub; this URL stays the same across versions.
+        logger.info("Download of %s %s sent to GitHub.", app, release.version)
+        return redirect(release.download_url)
 
     size = release.size
     try:

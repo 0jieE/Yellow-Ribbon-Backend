@@ -14,6 +14,7 @@ from django.urls import include, path
 from accounts import views as account_views
 from core.admin_views import backup_view, restore_view
 from orders import views as order_views
+from website import api as website_api
 
 
 def health(_request):
@@ -35,6 +36,8 @@ urlpatterns = [
     path("api/admin/", include("config.admin_api_urls")),
     path("api/rider/", include("delivery.urls")),
     path("api/payments/", include("payments.urls")),
+    path("api/app-version/<str:app>/", website_api.app_version, name="app-version"),
+    path("api/app-releases/publish/", website_api.publish_release, name="app-release-publish"),
     # The public website: landing page at /, staff sign-in, APK downloads.
     path("", include("website.urls")),
 ]

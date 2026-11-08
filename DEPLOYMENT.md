@@ -116,6 +116,7 @@ disk, where they will not survive a deploy. Set all three.
 | `MAYA_PUBLIC_KEY` / `MAYA_SECRET_KEY` | Optional: leave blank and Maya checkout answers "not configured". For the sandbox, use the shared public keys on developers.maya.ph ("Sandbox Party 1"). They are shared with every developer, so never register a webhook on them. |
 | `MAYA_BASE_URL` | `https://pg-sandbox.paymaya.com` (the default). Production is `https://pg.paymaya.com`, with your own keys. |
 | `FIREBASE_CREDENTIALS_JSON` | The whole service-account JSON **on one line**. Do not use `FIREBASE_CREDENTIALS_PATH` — there is no file to point at. |
+| `APP_RELEASE_PUBLISH_TOKEN` | A long random secret; the same value is the `APP_RELEASE_PUBLISH_TOKEN` secret in the mobile repo's GitHub settings. Unset, GitHub cannot publish app updates (section 10). Make one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 
 ### Business rules (optional; defaults shown in `.env.example`)
 
@@ -247,13 +248,30 @@ area and fee, how ordering works, and a **Download the app** button. The text
 under **About the shop** and the address, opening hours, phone and Facebook
 link come from **Store settings → Website**; anything left blank is left off.
 
-The APKs are uploaded in the admin under **System → App downloads**:
+**Releases come from GitHub.** In the mobile repo, bump `version:` in each
+app's `pubspec.yaml` (the number after `+` must go up every time) and push a
+tag such as `v1.0.1`. The GitHub workflow builds the three APKs, attaches them
+to a GitHub release, and announces each one to the backend at
+`POST /api/app-releases/publish/`, authenticated with
+`APP_RELEASE_PUBLISH_TOKEN`. From then on:
 
-1. Build each app: `flutter build apk --release` (the file is
-   `build/app/outputs/flutter-apk/app-release.apk`).
-2. **Add app download**, pick the app, type its version, choose the APK, save.
-   Uploading a new APK for the same app replaces the old one; the download
-   link stays the same.
+- the website's download buttons send people to the GitHub file;
+- each app asks `GET /api/app-version/<customer|rider|admin>/` when it opens
+  and offers the update when the published build number is higher than its
+  own. Android still asks the user to confirm the install: apps installed
+  outside the Play Store cannot update silently.
+
+A published link must point at
+`https://github.com/0jieE/yellow-Ribbon-Mobile/releases/download/`
+(`APP_RELEASE_URL_PREFIX`), so a leaked token cannot send the apps elsewhere.
+An older build number than the one published is refused.
+
+**By hand, as a fallback**, under **System → App downloads**: either paste a
+download link and version, or upload the `app-release.apk` itself
+(`build/app/outputs/flutter-apk/`). An uploaded file is kept in Postgres in
+1 MB pieces, because the free web service has no lasting disk and Cloudinary's
+free plan refuses files over 10 MB; three 52 MB APKs take about 160 MB of the
+free database's 1 GB. Publishing from GitHub drops an uploaded file.
 
 Who can download what:
 
@@ -263,9 +281,13 @@ Who can download what:
 | Ribbon Rider | `/staff/`, after signing in | rider accounts (and store admins) |
 | Ribbon Admin | `/staff/`, after signing in | store admins and superusers |
 
-The files are kept in Postgres in 1 MB pieces, because the free web service has
-no lasting disk and Cloudinary's free plan refuses files over 10 MB. Three
-fat APKs take about 160 MB of the free database's 1 GB.
+The sign-in only guards the website's button: a GitHub release asset can be
+downloaded by anyone who has its link, and the repo is public. Riders still
+need a rider account to use the app.
+
+**Signing.** Every release must be signed with the same release key (kept as
+a GitHub secret, with a copy backed up by you). Lose it and no update can
+install over the apps again; each phone would have to uninstall first.
 
 ---
 

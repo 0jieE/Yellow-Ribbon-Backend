@@ -18,7 +18,7 @@
                     <h2>{{ app.kind.label }}</h2>
                     {% if app.release %}
                         <a class="btn btn--small" href="{% url 'website:download' app.kind %}" download>Download</a>
-                        <p class="fine">Version {{ app.release.version }}, {{ app.release.size_mb }} MB.</p>
+                        <p class="fine">Version {{ app.release.version }}{% if app.release.size %}, {{ app.release.size_mb }} MB{% endif %}.</p>
                     {% else %}
                         <p class="fine">Not uploaded yet. Ask the store admin to upload it under App downloads.</p>
                     {% endif %}

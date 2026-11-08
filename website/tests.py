@@ -288,7 +288,7 @@ class AppReleaseAdminTests(TestCase):
     def test_upload_through_the_admin(self):
         response = self.client.post(
             reverse("admin:website_apprelease_add"),
-            {"app": "customer", "version": "1.0.4", "apk": apk()},
+            {"app": "customer", "version": "1.0.4", "version_code": "4", "download_url": "", "notes": "", "apk": apk()},
             follow=True,
         )
         self.assertEqual(response.status_code, 200)
@@ -301,21 +301,23 @@ class AppReleaseAdminTests(TestCase):
     def test_a_non_apk_is_refused_with_a_message(self):
         response = self.client.post(
             reverse("admin:website_apprelease_add"),
-            {"app": "customer", "version": "1", "apk": apk(b"hello")},
+            {"app": "customer", "version": "1", "version_code": "1", "download_url": "", "notes": "", "apk": apk(b"hello")},
         )
         self.assertContains(response, "That is not an APK file")
         self.assertFalse(AppRelease.objects.exists())
 
-    def test_a_new_release_needs_a_file(self):
+    def test_a_new_release_needs_a_link_or_a_file(self):
         response = self.client.post(
-            reverse("admin:website_apprelease_add"), {"app": "customer", "version": "1"}
+            reverse("admin:website_apprelease_add"),
+            {"app": "customer", "version": "1", "version_code": "1", "download_url": "", "notes": ""},
         )
-        self.assertContains(response, "Choose the APK file to upload")
+        self.assertContains(response, "Give a download link")
 
     def test_changing_only_the_version_keeps_the_file(self):
         obj = release()
         self.client.post(
-            reverse("admin:website_apprelease_change", args=[obj.pk]), {"version": "1.0.1"}
+            reverse("admin:website_apprelease_change", args=[obj.pk]),
+            {"version": "1.0.1", "version_code": "2", "download_url": "", "notes": ""},
         )
         obj.refresh_from_db()
         self.assertEqual(obj.version, "1.0.1")

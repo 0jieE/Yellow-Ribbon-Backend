@@ -1,6 +1,12 @@
 """
-The Android apps offered for download on the public website.
+The Android apps offered for download on the public website and in the apps'
+own "Update available" prompt.
 
+Normally a release is built by GitHub Actions in the mobile repo, attached to
+a GitHub release, and announced here through the publish API: the row then
+holds only the version and the GitHub download link (`download_url`).
+
+An APK can also be uploaded by hand in the admin, which is the fallback below.
 Render's free web service has no disk that survives a deploy, and Cloudinary's
 free plan refuses files over 10 MB, so an APK is kept in Postgres: split into
 1 MB chunks, so a download streams one chunk at a time instead of holding a
@@ -68,6 +74,22 @@ class AppRelease(models.Model):
     version = models.CharField(
         max_length=30, help_text='Shown next to the download button, e.g. "1.0.3".'
     )
+    version_code = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            "The build number after the + in pubspec.yaml (1.0.3+7 is 7). The apps "
+            "compare it with their own to decide whether to offer an update."
+        ),
+    )
+    download_url = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text=(
+            "Where the APK is hosted (a GitHub release). When set, downloads go "
+            "there and no file needs uploading here."
+        ),
+    )
+    notes = models.TextField(blank=True, max_length=2000, help_text="What changed, shown in the app's update prompt.")
     size = models.PositiveBigIntegerField(default=0, editable=False)
     sha256 = models.CharField(max_length=64, blank=True, editable=False)
     uploaded_by = models.CharField(max_length=150, blank=True, editable=False)
@@ -91,8 +113,20 @@ class AppRelease(models.Model):
         return round(self.size / (1024 * 1024), 1)
 
     @property
+    def is_hosted_elsewhere(self):
+        return bool(self.download_url)
+
+    @property
+    def has_file(self):
+        return self.size > 0 and not self.download_url
+
+    @property
     def is_ready(self):
-        return self.size > 0
+        return bool(self.download_url) or self.size > 0
+
+    @classmethod
+    def ready(cls):
+        return cls.objects.filter(models.Q(size__gt=0) | ~models.Q(download_url=""))
 
     def replace_file(self, upload):
         """
@@ -120,7 +154,22 @@ class AppRelease(models.Model):
                 AppReleaseChunk.objects.create(release=self, index=index, data=data)
             self.size = size
             self.sha256 = digest.hexdigest()
+            # An uploaded file replaces a GitHub-hosted one, or it would never be served.
+            self.download_url = ""
             self.save()
+
+    def publish_hosted(self, *, version, version_code, download_url, size=0, sha256="", notes="", by=""):
+        """Point this app at a new APK hosted elsewhere, dropping any uploaded file."""
+        with transaction.atomic():
+            self.version = version
+            self.version_code = version_code
+            self.download_url = download_url
+            self.size = size
+            self.sha256 = sha256
+            self.notes = notes
+            self.uploaded_by = by
+            self.save()
+            self.chunks.all().delete()
 
     def iter_bytes(self, start=0, end=None):
         """Yield bytes start..end (inclusive), reading one chunk at a time."""

@@ -33,6 +33,8 @@ env = environ.Env(
     MAYA_SECRET_KEY=(str, ""),
     MAYA_BASE_URL=(str, "https://pg-sandbox.paymaya.com"),
     MAYA_TIMEOUT_SECONDS=(float, 15.0),
+    APP_RELEASE_PUBLISH_TOKEN=(str, ""),
+    APP_RELEASE_URL_PREFIX=(str, "https://github.com/0jieE/yellow-Ribbon-Mobile/releases/download/"),
     PAYMONGO_PUBLIC_KEY=(str, ""),
     PAYMONGO_SECRET_KEY=(str, ""),
     PAYMONGO_WEBHOOK_SECRET=(str, ""),
@@ -364,6 +366,14 @@ MAYA_PUBLIC_KEY = env("MAYA_PUBLIC_KEY")
 MAYA_SECRET_KEY = env("MAYA_SECRET_KEY")
 MAYA_BASE_URL = env("MAYA_BASE_URL")
 MAYA_TIMEOUT_SECONDS = env("MAYA_TIMEOUT_SECONDS")
+
+# App updates. The mobile repo's GitHub workflow announces each new APK to
+# POST /api/app-releases/publish/ with this shared secret (the same value is a
+# GitHub Actions secret there). Unset turns publishing off. A published link
+# must start with the prefix, so even a leaked token cannot point the apps'
+# update prompt at another site.
+APP_RELEASE_PUBLISH_TOKEN = env("APP_RELEASE_PUBLISH_TOKEN")
+APP_RELEASE_URL_PREFIX = env("APP_RELEASE_URL_PREFIX")
 
 PAYMONGO_PUBLIC_KEY = env("PAYMONGO_PUBLIC_KEY")
 PAYMONGO_SECRET_KEY = env("PAYMONGO_SECRET_KEY")

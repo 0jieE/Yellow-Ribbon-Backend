@@ -1,23 +1,51 @@
 {% extends "shop/base.html" %}
 
-{% block title %}Sign in{% endblock %}
+{% block title %}Login{% endblock %}
+
+{% block body_class %}{% endblock %}
+{% block appbar %}{% endblock %}
+{% block page_class %}page page--center{% endblock %}
 
 {% block content %}
-<h1>Sign in</h1>
-<p>Use the same account as the Yellow Ribbon Android app, or <a href="{% url 'shop:sign-up' %}">create one</a>.</p>
+<div class="auth card card--raised">
+    <span class="ms fill auth-icon" aria-hidden="true">local_pizza</span>
+    <h1 class="auth-title">Yellow Ribbon Pizza</h1>
 
-{% if refused %}<div class="alert" role="alert"><p>{{ refused }}</p></div>{% endif %}
-{% if form.non_field_errors %}
-<div class="alert" role="alert"><p>Wrong username or password. Check both and try again; the password is case-sensitive.</p></div>
-{% endif %}
+    {% if refused %}
+    <div class="error-box" role="alert"><span class="ms" aria-hidden="true">error</span><p>{{ refused }}</p></div>
+    {% elif form.non_field_errors %}
+    <div class="error-box" role="alert"><span class="ms" aria-hidden="true">error</span><p>Wrong username or password. Check both and try again; the password is case-sensitive.</p></div>
+    {% endif %}
 
-<form method="post" class="form">
-    {% csrf_token %}
-    <input type="hidden" name="next" value="{{ next }}">
-    <label for="{{ form.username.id_for_label }}">Username</label>
-    {{ form.username }}
-    <label for="{{ form.password.id_for_label }}">Password</label>
-    {{ form.password }}
-    <button type="submit" class="btn btn--wide">Sign in</button>
-</form>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="field"><span class="sr-only">Username</span>{{ form.username }}</label>
+        <label class="field">
+            <span class="sr-only">Password</span>
+            <span class="input-wrap">
+                {{ form.password }}
+                <button type="button" class="icon-btn" data-reveal aria-label="Show password" title="Show password"><span class="ms" aria-hidden="true">visibility</span></button>
+            </span>
+        </label>
+        <button type="submit" class="btn btn--amber btn--login">Login</button>
+    </form>
+    <a class="text-btn" href="{% url 'shop:sign-up' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Create Account</a>
+</div>
+{% endblock %}
+
+{% block bottom %}{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelectorAll("[data-reveal]").forEach(function (button) {
+        var input = button.parentElement.querySelector("input");
+        button.addEventListener("click", function () {
+            var show = input.type === "password";
+            input.type = show ? "text" : "password";
+            button.firstElementChild.textContent = show ? "visibility_off" : "visibility";
+            button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+        });
+    });
+</script>
 {% endblock %}

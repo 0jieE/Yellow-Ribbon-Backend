@@ -1,44 +1,67 @@
 {% extends "shop/base.html" %}
 {% load static %}
 
-{% block title %}Profile{% endblock %}
+{% block title %}My Profile{% endblock %}
+
+{% block appbar_title %}My Profile{% endblock %}
+{% block actions %}<a class="icon-btn" href="{% url 'shop:profile-edit' %}" aria-label="Edit profile" title="Edit profile"><span class="ms" aria-hidden="true">edit</span></a>{% endblock %}
 
 {% block content %}
-<h1>Hi, {{ user.first_name|default:user.username }}</h1>
+<div class="stack">
+    <section class="hero">
+        <span class="avatar" aria-hidden="true"><span class="ms">person</span></span>
+        <h2>{{ user.get_full_name|default:user.username }}</h2>
+        <p>@{{ user.username }}</p>
+    </section>
 
-<section class="group push-card" data-push-card>
-    <h2>Notifications</h2>
-    <p>Get a notification when your order is confirmed and when the rider is on the way.</p>
-    <button type="button" class="btn btn--small" data-push-on{% if push_on %} hidden{% endif %}>Turn on notifications</button>
-    <p class="muted fine" data-push-status aria-live="polite">{% if push_on %}Notifications are on for this phone.{% endif %}</p>
-</section>
+    <section class="card">
+        <h2 class="section-title">Contact</h2>
+        <div class="info">
+            <span class="ms" aria-hidden="true">phone</span>
+            <div><small>Phone</small><b{% if not user.phone %} class="unset"{% endif %}>{{ user.phone|default:"Not set" }}</b></div>
+        </div>
+    </section>
 
-<form method="post" class="form group">
-    {% csrf_token %}
-    <h2>Your details</h2>
-    {% for field in form %}
-        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {% for e in field.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
-    {% endfor %}
-    <button type="submit" class="btn btn--small">Save details</button>
-</form>
+    <section class="card">
+        <h2 class="section-title">Default delivery location</h2>
+        <div class="info">
+            <span class="ms" aria-hidden="true">home</span>
+            <div><small>Address</small><b{% if not customer.default_address %} class="unset"{% endif %}>{{ customer.default_address|default:"Not set" }}</b></div>
+        </div>
+        <hr class="divider">
+        <div class="info">
+            <span class="ms" aria-hidden="true">place</span>
+            <div><small>Map pin</small>
+                {% if has_pin %}<b>{{ customer.default_latitude }}, {{ customer.default_longitude }}</b>{% else %}<b class="unset">Not set</b>{% endif %}
+            </div>
+        </div>
+        {% if not has_pin %}
+        <p class="hint">Set a map pin at checkout and it will be filled in for you next time.</p>
+        {% endif %}
+    </section>
 
-{% if customer.default_address %}
-<section class="group">
-    <h2>Usual address</h2>
-    <p>{{ customer.default_address }}</p>
-    <p class="muted fine">Changed when you tick "Save this as my usual address" at checkout.</p>
-</section>
-{% endif %}
+    <section class="card">
+        <h2 class="section-title">Account</h2>
+        <div class="info">
+            <span class="ms" aria-hidden="true">badge</span>
+            <div><small>Username</small><b>{{ user.username }}</b></div>
+        </div>
+    </section>
 
-<section class="group">
-    <h2>App</h2>
-    <p class="muted">Signed in as {{ user.username }}.</p>
-    <form method="post" action="{% url 'shop:sign-out' %}">{% csrf_token %}
-        <button type="submit" class="btn btn--ghost btn--small">Sign out</button>
-    </form>
-</section>
+    <section class="card push-row" data-push-card>
+        <h2 class="section-title">Notifications</h2>
+        <p>Get a notification when your order is confirmed and when the rider is on the way.</p>
+        <button type="button" class="btn" data-push-on{% if push_on %} hidden{% endif %}><span class="ms" aria-hidden="true">notifications</span>TURN ON NOTIFICATIONS</button>
+        <p data-push-status aria-live="polite">{% if push_on %}Notifications are on for this phone.{% endif %}</p>
+    </section>
+
+    <div class="buttons">
+        <a class="btn" href="{% url 'shop:profile-edit' %}"><span class="ms" aria-hidden="true">edit</span>EDIT PROFILE</a>
+        <form method="post" action="{% url 'shop:sign-out' %}">{% csrf_token %}
+            <button type="submit" class="btn btn--outline-red"><span class="ms" aria-hidden="true">logout</span>LOG OUT</button>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

@@ -1,93 +1,141 @@
 {% extends "shop/base.html" %}
 {% load static %}
 
-{% block title %}{{ order.order_number }}{% endblock %}
+{% block title %}Order {{ order.order_number }}{% endblock %}
 
 {% block head %}
 {% if live %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">{% endif %}
 {% endblock %}
 
-{% block bar_action %}<a class="bar-link" href="{% url 'shop:orders' %}">All orders</a>{% endblock %}
+{% block body_class %}{% endblock %}
+
+{% block leading %}<a class="icon-btn back" href="{% url 'shop:orders' %}" aria-label="Back to my orders"><span class="ms" aria-hidden="true">arrow_back</span></a>{% endblock %}
+{% block appbar_title %}Order {{ order.order_number }}{% endblock %}
+{% block actions %}
+{% if not p.terminal %}<a class="icon-btn" href="{% url 'shop:order' order.pk %}" aria-label="Refresh" title="Refresh"><span class="ms" aria-hidden="true">refresh</span></a>{% endif %}
+{% endblock %}
 
 {% block content %}
-<header class="order-head">
-    <h1>{{ order.order_number }}</h1>
-    <span class="status status--{{ order.status }}" id="status-label">{{ order.get_status_display }}</span>
-</header>
+<div class="stack">
+    <section class="card status-card" style="--c: {{ p.style.colour }}">
+        <div class="status-top">
+            <span class="badge" id="status-label"><span class="ms" aria-hidden="true">{{ p.style.icon }}</span>{{ p.style.label }}</span>
+            <strong>₱{{ order.total|floatformat:2 }}</strong>
+        </div>
+        <div class="progress-head" style="--c: {{ p.label_colour }}">
+            <span class="progress-label">{{ p.step_label }}</span>
+            <span class="progress-count">{% if p.done is None %}—{% else %}Step {{ p.done }} of {{ p.total }}{% endif %}</span>
+        </div>
+        <div class="bar" style="--c: {{ p.bar_colour }}" aria-hidden="true"><span style="width: {{ p.percent }}%"></span></div>
+        <p class="placed">Placed {{ placed_at }}</p>
+        {% if awaiting %}<p class="awaiting">This order goes to the store once your {{ method_label }} payment is confirmed.</p>{% endif %}
+        {% if order.status == "cancelled" and order.cancel_reason %}<p class="placed">Reason: {{ order.cancel_reason }}</p>{% endif %}
+    </section>
 
-{% if order.status == "pending_payment" %}
-    <div class="callout">
-        <p><strong>Waiting for your {{ order.get_payment_type_display }} payment.</strong>
-           The kitchen starts once it is paid. Unpaid orders are cancelled after a while.</p>
-        {% if can_pay %}
+    {# Where the order is: this box until a rider is on the road, then the map. #}
+    <div class="tint" id="track-box" style="--c: {{ p.style.colour }}">
+        <span class="ms" aria-hidden="true">{{ p.style.icon }}</span>
+        <p id="track-note">{{ tracking_message }}</p>
+    </div>
+    {% if live %}
+    <div id="track-wrap" class="stack" hidden>
+        <div class="map-wrap map-wrap--track">
+            <div id="track-map" class="map" aria-label="Map with your rider and your address"></div>
+            <button type="button" class="map-fab" id="recentre" aria-label="Centre on rider" title="Centre on rider"><span class="ms" aria-hidden="true">my_location</span></button>
+        </div>
+        <section class="card rider-card">
+            <div class="rider-top">
+                <span class="ms fill" aria-hidden="true">delivery_dining</span>
+                <strong id="rider-name">Your rider</strong>
+                <span class="small muted" id="rider-updated"></span>
+            </div>
+            <p class="eta is-waiting" id="eta"><span class="ms" aria-hidden="true">schedule</span><span>Arrival time appears once your rider sets off.</span></p>
+        </section>
+    </div>
+    {% endif %}
+
+    <section class="card">
+        <h2 class="section-title">Delivery</h2>
+        <p>{{ order.delivery_address }}</p>
+        {% if order.delivery_notes %}<p class="delivery-note">Note: {{ order.delivery_notes }}</p>{% endif %}
+    </section>
+
+    <section class="card">
+        <h2 class="section-title">Payment</h2>
+        <div class="pay-head">
+            <span class="ms" aria-hidden="true">{% if order.payment_type == "cod" %}payments{% else %}account_balance_wallet{% endif %}</span>
+            <strong>{{ payment_name }}</strong>
+            <span class="chip" style="--c: {{ chip.colour }}">{{ chip.label }}</span>
+        </div>
+        {% if invoice %}
+        <dl class="kv-list">
+            <div class="kv"><dt>Invoice</dt><dd>{{ invoice.invoice_number }}</dd></div>
+            {% if invoice.payer %}<div class="kv"><dt>Paid from</dt><dd>{{ invoice.payer }}</dd></div>{% endif %}
+            {% if invoice.paymongo_payment_id %}<div class="kv"><dt>{{ method_label }} {% if paid %}payment{% else %}reference{% endif %}</dt><dd class="mono">{{ invoice.paymongo_payment_id }}</dd></div>{% endif %}
+            {% if paid %}
+            <div class="kv"><dt>Amount paid</dt><dd>₱{{ invoice.amount_paid|floatformat:2 }}</dd></div>
+            <div class="kv"><dt>Paid on</dt><dd>{{ paid_at }}</dd></div>
+            {% endif %}
+        </dl>
+        {% endif %}
+        {% if refund %}
+        <div class="note-box" style="--c: {{ refund.colour }}"><span class="ms" aria-hidden="true">{{ refund.icon }}</span><p>{{ refund.text }}</p></div>
+        {% endif %}
+        {% if awaiting %}
+        <p class="awaiting-text">{% if order.payment_status == "failed" %}The last {{ method_label }} attempt did not go through.{% else %}Waiting for your {{ method_label }} payment to be confirmed. This updates by itself.{% endif %}</p>
         <form method="post">{% csrf_token %}<input type="hidden" name="action" value="pay">
-            <button type="submit" class="btn btn--wide">Pay ₱{{ order.total|floatformat:2 }} with {{ order.get_payment_type_display }}</button>
+            <button type="submit" class="btn btn--amber btn--pay"><span class="ms" aria-hidden="true">open_in_new</span>PAY WITH {{ method_label|upper }}</button>
         </form>
         {% endif %}
-    </div>
-{% elif order.status == "cancelled" %}
-    <div class="callout callout--muted">
-        <p><strong>This order was cancelled</strong>{% if order.cancel_reason %}: {{ order.cancel_reason }}{% endif %}.</p>
-        {% if payment.refund %}<p>Refund: {{ payment.refund.status }}{% if payment.refund.amount %} of ₱{{ payment.refund.amount }}{% endif %}.</p>{% endif %}
-    </div>
-{% endif %}
+    </section>
 
-{% if steps %}
-<ol class="progress" aria-label="Order progress">
-    {% for step in steps %}
-    <li class="{% if step.done %}done{% endif %}{% if step.current %} current{% endif %}"{% if step.current %} aria-current="step"{% endif %}>{{ step.label }}</li>
-    {% endfor %}
-</ol>
-{% endif %}
+    <section class="card">
+        <h2 class="section-title">Items</h2>
+        {% for line in items %}
+        <div class="item">
+            <span class="item-qty">{{ line.quantity }}×</span>
+            <span class="item-body">{{ line.menu.name }}<br><span class="item-each">₱{{ line.unit_price|floatformat:2 }} each</span></span>
+            <span>₱{{ line.line_subtotal|floatformat:2 }}</span>
+        </div>
+        {% endfor %}
+        <hr class="divider">
+        <div class="tot"><span>Subtotal</span><b>₱{{ order.subtotal|floatformat:2 }}</b></div>
+        <div class="tot"><span>Delivery fee</span><b>₱{{ order.delivery_fee|floatformat:2 }}</b></div>
+        <hr class="divider">
+        <div class="tot tot--grand"><span>Total</span><b>₱{{ order.total|floatformat:2 }}</b></div>
+    </section>
 
-{% if order.eta_minutes and order.status == "out_for_delivery" %}
-<p class="eta" id="eta">Arriving in about {{ order.eta_minutes }} min</p>
-{% else %}
-<p class="eta" id="eta" hidden></p>
-{% endif %}
+    {% if timeline %}
+    <section class="card">
+        <h2 class="section-title">Progress</h2>
+        <ol class="timeline">
+            {% for log in timeline %}
+            <li style="--c: {{ log.colour }}"><div><strong>{{ log.label }}</strong><span>{{ log.when }}</span></div></li>
+            {% endfor %}
+        </ol>
+    </section>
+    {% endif %}
 
-{% if live %}
-<div class="map-wrap map-wrap--track" id="track-wrap"{% if order.status != "out_for_delivery" %} hidden{% endif %}>
-    <div id="track-map" class="map" aria-label="Map with your rider and your address"></div>
-</div>
-<p class="muted fine" id="track-note">{% if order.status == "out_for_delivery" %}The map follows your rider. It updates by itself.{% else %}This page updates by itself.{% endif %}</p>
-{% endif %}
+    <section class="card push-row" data-push-card hidden>
+        <h2 class="section-title">Notifications</h2>
+        <p>Get a notification when your order is confirmed and when the rider is on the way.</p>
+        <button type="button" class="btn" data-push-on><span class="ms" aria-hidden="true">notifications</span>TURN ON NOTIFICATIONS</button>
+        <p data-push-status aria-live="polite"></p>
+    </section>
 
-<section class="group">
-    <h2>Items</h2>
-    <ul class="summary">
-        {% for line in items %}<li><span>{{ line.quantity }} × {{ line.menu.name }}</span><span>₱{{ line.line_subtotal|floatformat:2 }}</span></li>{% endfor %}
-    </ul>
-    <dl class="totals">
-        <div><dt>Subtotal</dt><dd>₱{{ order.subtotal|floatformat:2 }}</dd></div>
-        <div><dt>Delivery</dt><dd>₱{{ order.delivery_fee|floatformat:2 }}</dd></div>
-        <div class="grand"><dt>Total</dt><dd>₱{{ order.total|floatformat:2 }}</dd></div>
-    </dl>
-</section>
-
-<section class="group">
-    <h2>Delivery</h2>
-    <p>{{ order.delivery_address }}</p>
-    {% if order.delivery_notes %}<p class="muted">{{ order.delivery_notes }}</p>{% endif %}
-    <p class="muted">Paying with {{ order.get_payment_type_display }}{% if order.payment_status == "paid" %}: paid{% endif %}.
-        {% if payment.invoice_number %}Invoice {{ payment.invoice_number }}.{% endif %}</p>
-</section>
-
-{% if order.is_cancellable_by_customer %}
-<form method="post" class="cancel-form" onsubmit="return confirm('Cancel {{ order.order_number }}?');">
-    {% csrf_token %}<input type="hidden" name="action" value="cancel">
-    <button type="submit" class="link-button danger">Cancel this order</button>
-</form>
-{% endif %}
-
-<div class="push-card" data-push-card hidden>
-    <p>Get a notification when your order is confirmed and when the rider is on the way.</p>
-    <button type="button" class="btn btn--small" data-push-on>Turn on notifications</button>
-    <p class="muted fine" data-push-status aria-live="polite"></p>
+    {% if order.is_cancellable_by_customer %}
+    <form method="post" class="cancel" onsubmit="return confirm('Cancel this order?');">
+        {% csrf_token %}<input type="hidden" name="action" value="cancel">
+        <button type="submit" class="btn btn--outline-red"><span class="ms" aria-hidden="true">cancel</span>CANCEL ORDER</button>
+        <p class="cancel-note">You can cancel until the store accepts your order.</p>
+    </form>
+    {% endif %}
 </div>
 
 {{ track_config|json_script:"track-config" }}
 {% endblock %}
+
+{% block bottom %}{% endblock %}
 
 {% block scripts %}
 {% if live %}

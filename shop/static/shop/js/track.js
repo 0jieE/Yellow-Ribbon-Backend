@@ -6,8 +6,10 @@
 (function () {
     var config = JSON.parse(document.getElementById("track-config").textContent);
     var wrap = document.getElementById("track-wrap");
+    var box = document.getElementById("track-box");
     var etaEl = document.getElementById("eta");
-    var noteEl = document.getElementById("track-note");
+    var nameEl = document.getElementById("rider-name");
+    var updatedEl = document.getElementById("rider-updated");
     var map = null, rider = null, route = null;
     var timer = null;
     var FINISHED = ["delivered", "cancelled"];
@@ -29,7 +31,9 @@
 
     function ensureMap() {
         if (map) return;
+        // The app swaps the status box for the map once a rider is on the road.
         wrap.hidden = false;
+        box.hidden = true;
         map = L.map("track-map", { zoomControl: false }).setView(config.destination, 15);
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
             maxZoom: 19,
@@ -49,7 +53,7 @@
         if (!rider) {
             rider = L.marker(here, {
                 title: "Your rider",
-                icon: L.divIcon({ className: "pin-rider", html: "", iconSize: [28, 28] }),
+                icon: L.divIcon({ className: "pin-rider", html: "", iconSize: [24, 24] }),
             }).addTo(map);
             map.fitBounds([here, config.destination], { padding: [40, 40], maxZoom: 17 });
         } else {
@@ -58,13 +62,28 @@
         if (order.route_polyline) {
             var path = decode(order.route_polyline);
             if (route) route.setLatLngs(path);
-            else route = L.polyline(path, { color: "#C8302A", weight: 5, opacity: 0.85 }).addTo(map);
+            else route = L.polyline(path, { color: "#00695C", weight: 5, opacity: 0.9, lineCap: "round", lineJoin: "round" }).addTo(map);
         }
+        nameEl.textContent = loc.rider_name || "Your rider";
+        updatedEl.textContent = loc.updated_at ? "Updated " + since(loc.updated_at) : "";
         if (order.eta_minutes) {
-            etaEl.hidden = false;
-            etaEl.textContent = "Arriving in about " + order.eta_minutes + " min";
+            etaEl.classList.remove("is-waiting");
+            etaEl.lastElementChild.textContent = "Arriving in about " + order.eta_minutes + " min";
         }
-        noteEl.textContent = (loc.rider_name ? loc.rider_name + " is" : "Your rider is") + " on the way. The map updates by itself.";
+    }
+
+    function since(iso) {
+        var seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+        if (seconds < 60) return "just now";
+        var minutes = Math.round(seconds / 60);
+        return minutes < 60 ? minutes + " min ago" : Math.round(minutes / 60) + " h ago";
+    }
+
+    var recentre = document.getElementById("recentre");
+    if (recentre) {
+        recentre.addEventListener("click", function () {
+            if (map && rider) map.setView(rider.getLatLng(), 16);
+        });
     }
 
     // Awaiting an online payment: ask the gateway itself (it settles a GCash
@@ -96,7 +115,9 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (order) {
                 if (!order) return;
-                if (order.status !== config.status) {
+                var leg = order.rider_location ? order.rider_location.delivery_status : null;
+                // "Picked up" becomes "On the way" without the order status changing.
+                if (order.status !== config.status || (leg && config.deliveryStatus && leg !== config.deliveryStatus)) {
                     window.location.reload();
                     return;
                 }

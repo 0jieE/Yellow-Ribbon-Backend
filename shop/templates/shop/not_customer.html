@@ -2,11 +2,19 @@
 
 {% block title %}Customer accounts only{% endblock %}
 
+{% block body_class %}{% endblock %}
+{% block page_class %}page page--center{% endblock %}
+
 {% block content %}
-<h1>This app is for customers</h1>
-<p>You are signed in as <strong>{{ user.username }}</strong>, which is a rider or staff account.
-   Riders use the Ribbon Rider app, and the store is run from the admin.</p>
-<form method="post" action="{% url 'shop:sign-out' %}">{% csrf_token %}
-    <button type="submit" class="btn">Sign out and use a customer account</button>
-</form>
+<div class="auth card card--raised">
+    <span class="ms fill auth-icon auth-icon--join" aria-hidden="true">info</span>
+    <h1 class="auth-title auth-title--join">This app is for customers</h1>
+    <p>You are signed in as <strong>{{ user.username }}</strong>, which is a rider or staff account.
+       Riders use the Ribbon Rider app, and the store is run from the admin.</p>
+    <form method="post" action="{% url 'shop:sign-out' %}">{% csrf_token %}
+        <button type="submit" class="btn btn--amber btn--login">Log out and use a customer account</button>
+    </form>
+</div>
 {% endblock %}
+
+{% block bottom %}{% endblock %}

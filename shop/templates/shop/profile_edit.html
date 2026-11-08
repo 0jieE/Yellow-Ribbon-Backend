@@ -1,0 +1,51 @@
+{% extends "shop/base.html" %}
+
+{% block title %}Edit Profile{% endblock %}
+
+{% block body_class %}{% endblock %}
+{% block leading %}<a class="icon-btn back" href="{% url 'shop:profile' %}" aria-label="Back to my profile"><span class="ms" aria-hidden="true">arrow_back</span></a>{% endblock %}
+{% block appbar_title %}Edit Profile{% endblock %}
+
+{% block content %}
+<form method="post" class="stack">
+    {% csrf_token %}
+    <section class="card">
+        <h2 class="section-title">Your details</h2>
+        <div class="fields">
+        <div class="two">
+            <label class="field"><span class="field-label">First name</span>{{ form.first_name }}
+                {% for e in form.first_name.errors %}<span class="field-error">{{ e }}</span>{% endfor %}</label>
+            <label class="field"><span class="field-label">Last name</span>{{ form.last_name }}
+                {% for e in form.last_name.errors %}<span class="field-error">{{ e }}</span>{% endfor %}</label>
+        </div>
+        <label class="field"><span class="field-label">Phone</span>{{ form.phone }}
+            <span class="helper">Riders use this to reach you</span>
+            {% for e in form.phone.errors %}<span class="field-error">{{ e }}</span>{% endfor %}</label>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="section-title">Default delivery location</h2>
+        <div class="fields">
+        <p class="card-text">Used to prefill checkout. The map pin is saved when you tick "Save as my default delivery location" at checkout.</p>
+        <label class="field"><span class="field-label">Address</span>{{ form.default_address }}
+            {% for e in form.default_address.errors %}<span class="field-error">{{ e }}</span>{% endfor %}</label>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="section-title">Account</h2>
+        <label class="field"><span class="field-label">Username</span>
+            <input class="input" value="{{ user.username }}" disabled>
+            <span class="helper">Your username cannot be changed</span></label>
+    </section>
+
+    {% if form.non_field_errors %}
+    <div class="error-box" role="alert"><span class="ms" aria-hidden="true">error</span><div>{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div></div>
+    {% endif %}
+
+    <button type="submit" class="btn">SAVE CHANGES</button>
+</form>
+{% endblock %}
+
+{% block bottom %}{% endblock %}

@@ -9,8 +9,10 @@
     var lngInput = document.getElementById("id_delivery_longitude");
     var statusEl = document.getElementById("map-status");
     var feeEl = document.getElementById("fee");
-    var totalEl = document.getElementById("total");
+    var feeLabel = document.getElementById("fee-label");
+    var totalEls = document.querySelectorAll("[data-total]");
     var form = document.getElementById("checkout-form");
+    var button = document.getElementById("place");
     var subtotal = parseFloat(config.subtotal);
 
     var start = config.pin || config.center;
@@ -21,14 +23,15 @@
     }).addTo(map);
     L.circle(config.center, {
         radius: config.radiusKm * 1000,
-        color: "#3A1A0C",
+        color: "#1F1F1F",
         weight: 2,
-        fillColor: "#F4B708",
-        fillOpacity: 0.08,
+        fillColor: "#FFC107",
+        fillOpacity: 0.1,
         interactive: false,
     }).addTo(map);
 
     var placed = Boolean(config.pin);
+    var outside = false;
     var quoteTimer = null;
 
     function peso(value) {
@@ -40,6 +43,18 @@
         statusEl.classList.toggle("warn", Boolean(warn));
     }
 
+    function paying() {
+        var choice = form.querySelector('input[name="payment_type"]:checked');
+        return choice && choice.value !== "cod";
+    }
+
+    // The same labels as the app's button.
+    function label() {
+        if (button.dataset.busy) return;
+        button.disabled = outside;
+        button.textContent = outside ? "OUTSIDE DELIVERY AREA" : paying() ? "PLACE ORDER & PAY" : "PLACE ORDER";
+    }
+
     function quote(lat, lng) {
         clearTimeout(quoteTimer);
         quoteTimer = setTimeout(function () {
@@ -48,13 +63,16 @@
                 .then(function (q) {
                     if (!q) return;
                     feeEl.textContent = peso(q.delivery_fee);
-                    totalEl.textContent = peso(subtotal + parseFloat(q.delivery_fee));
-                    if (q.within_service_area) {
-                        say("Pin placed, " + q.distance_km.toFixed(1) + " km from the shop.");
-                    } else {
+                    feeLabel.textContent = q.mode === "per_km" ? "Delivery fee (" + q.distance_km.toFixed(1) + " km)" : "Delivery fee";
+                    totalEls.forEach(function (el) { el.textContent = peso(subtotal + parseFloat(q.delivery_fee)); });
+                    outside = !q.within_service_area;
+                    if (outside) {
                         say("That spot is " + q.distance_km.toFixed(1) + " km away, outside our delivery area (" +
                             config.radiusKm + " km). Move the pin inside the yellow circle.", true);
+                    } else {
+                        say("Pin placed, " + q.distance_km.toFixed(1) + " km from the shop.");
                     }
+                    label();
                 })
                 .catch(function () {});
         }, 350);
@@ -77,6 +95,8 @@
     }
 
     map.on("dragend zoomend", record);
+    form.addEventListener("change", label);
+    label();
 
     document.getElementById("locate").addEventListener("click", function () {
         if (!navigator.geolocation) {
@@ -103,8 +123,8 @@
             statusEl.scrollIntoView({ behavior: "smooth", block: "center" });
             return;
         }
-        var button = document.getElementById("place");
+        button.dataset.busy = "1";
         button.disabled = true;
-        button.textContent = "Placing your order…";
+        button.textContent = "PLACING YOUR ORDER…";
     });
 })();

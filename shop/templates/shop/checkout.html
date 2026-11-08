@@ -1,70 +1,96 @@
 {% extends "shop/base.html" %}
 {% load static %}
 
-{% block title %}Check out{% endblock %}
+{% block title %}Checkout{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 {% endblock %}
 
+{% block body_class %}has-footer{% endblock %}
+
+{% block leading %}<a class="icon-btn back" href="{% url 'shop:cart' %}" aria-label="Back to the cart"><span class="ms" aria-hidden="true">arrow_back</span></a>{% endblock %}
+{% block appbar_title %}Checkout{% endblock %}
+
 {% block content %}
-<h1>Check out</h1>
-
-<form method="post" class="form" id="checkout-form">
+<form method="post" id="checkout-form" class="stack" novalidate>
     {% csrf_token %}
-    {% if form.non_field_errors %}
-        <div class="alert" role="alert">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
-    {% endif %}
 
-    <fieldset class="group">
-        <legend>Where should we deliver?</legend>
-        <p class="muted">Drag the map so the pin sits on your door, or use your location.</p>
+    <section class="card">
+        <h2 class="section-title">Customer</h2>
+        <p class="line"><span class="ms" aria-hidden="true">person</span><span>{{ user.get_full_name|default:user.username }}</span></p>
+        <p class="line"><span class="ms" aria-hidden="true">phone</span><span>{{ user.phone|default:"No phone number" }}</span></p>
+    </section>
+
+    <section class="card">
+        <h2 class="section-title">Delivery address</h2>
+        <label class="field">
+            <span class="sr-only">Address</span>
+            {{ form.delivery_address }}
+            <span class="helper">What the rider reads to find your door</span>
+            {% for e in form.delivery_address.errors %}<span class="field-error">{{ e }}</span>{% endfor %}
+        </label>
+
         <div class="map-wrap">
             <div id="pin-map" class="map" role="application" aria-label="Map: move it to place the delivery pin"></div>
-            <span class="map-pin" aria-hidden="true"></span>
+            <span class="ms map-pin" aria-hidden="true">place</span>
+            <button type="button" class="map-fab" id="locate" aria-label="Use my location" title="Use my location"><span class="ms" aria-hidden="true">my_location</span></button>
         </div>
-        <button type="button" class="btn btn--ghost btn--small" id="locate">Use my location</button>
-        <p class="map-status muted" id="map-status" aria-live="polite"></p>
+        <p class="map-status" id="map-status" aria-live="polite"></p>
         {{ form.delivery_latitude }}{{ form.delivery_longitude }}
 
-        <label for="{{ form.delivery_address.id_for_label }}">{{ form.delivery_address.label }}</label>
-        {{ form.delivery_address }}
-        <small class="muted">{{ form.delivery_address.help_text }}</small>
-        {% for e in form.delivery_address.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+        <label class="field">
+            <span class="sr-only">Delivery notes (optional)</span>
+            {{ form.delivery_notes }}
+        </label>
+        <label class="check">{{ form.remember_address }} Save as my default delivery location</label>
+    </section>
 
-        <label for="{{ form.delivery_notes.id_for_label }}">{{ form.delivery_notes.label }}</label>
-        {{ form.delivery_notes }}
-
-        <label class="check">{{ form.remember_address }} {{ form.remember_address.label }}</label>
-    </fieldset>
-
-    <fieldset class="group">
-        <legend>{{ form.payment_type.label }}</legend>
+    <fieldset class="card card--fieldset">
+        <legend class="section-title">Payment</legend>
         {% for choice in form.payment_type %}
             {% if choice.data.value != "maya" or maya_enabled %}
-            <label class="choice">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+            <label class="radio">
+                {{ choice.tag }}
+                <span>
+                    <span class="radio-title">{% if choice.data.value == "cod" %}Cash on Delivery{% elif choice.data.value == "gcash" %}GCash{% else %}Maya Wallet{% endif %}</span>
+                    {% if choice.data.value == "maya" %}<span class="radio-sub">Log in to your Maya wallet to pay, then return to the app</span>{% endif %}
+                </span>
+            </label>
             {% endif %}
         {% endfor %}
-        {% for e in form.payment_type.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+        {% for e in form.payment_type.errors %}<span class="field-error">{{ e }}</span>{% endfor %}
     </fieldset>
 
-    <fieldset class="group">
-        <legend>Your order</legend>
-        <ul class="summary">
-            {% for line in items %}<li><span>{{ line.quantity }} × {{ line.menu.name }}</span><span>₱{{ line.line_total|floatformat:2 }}</span></li>{% endfor %}
-        </ul>
-        <dl class="totals">
-            <div><dt>Subtotal</dt><dd>₱{{ subtotal|floatformat:2 }}</dd></div>
-            <div><dt>Delivery</dt><dd id="fee">₱{{ fee|floatformat:2 }}</dd></div>
-            <div class="grand"><dt>Total</dt><dd id="total">₱{{ total|floatformat:2 }}</dd></div>
-        </dl>
-    </fieldset>
+    <section class="card">
+        <h2 class="section-title">Summary</h2>
+        <div class="sum-row"><span>Subtotal</span><b>₱{{ subtotal|floatformat:2 }}</b></div>
+        <div class="sum-row"><span id="fee-label">Delivery fee</span><b id="fee">₱{{ fee|floatformat:2 }}</b></div>
+        <hr class="divider">
+        <div class="sum-row sum-row--total"><span>Total</span><b data-total>₱{{ total|floatformat:2 }}</b></div>
+    </section>
 
-    <button type="submit" class="btn btn--wide" id="place">Place order</button>
-    <p class="muted fine">GCash and Maya open their payment page next. Cash is paid to the rider.</p>
+    {% if form.errors %}
+    <div class="error-box" role="alert">
+        <span class="ms" aria-hidden="true">error</span>
+        <div>
+            {% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}
+            {% if not form.non_field_errors %}<p>Check the details above and try again.</p>{% endif %}
+        </div>
+    </div>
+    {% endif %}
 </form>
 
 {{ map_config|json_script:"map-config" }}
+{% endblock %}
+
+{% block bottom %}
+<div class="footer">
+    <div class="footer-inner">
+        <div class="footer-row"><span>Total</span><strong class="big" data-total>₱{{ total|floatformat:2 }}</strong></div>
+        <button type="submit" form="checkout-form" class="btn" id="place">PLACE ORDER</button>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

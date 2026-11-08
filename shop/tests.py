@@ -13,13 +13,14 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.response import Response
 
-from accounts.models import Customer, DeviceToken, User
+from accounts.models import Customer, DeviceToken, Rider, User
 from menu.models import Menu
 from orders.constants import OrderStatus, PaymentStatus, PaymentType
-from orders.models import Order
+from orders.models import Order, OrderStatusLog
 from orders.tests_admin import make_order
 from payments import maya
 
+from . import display
 from .cart import MAX_QUANTITY, SESSION_KEY
 
 PASSWORD = "Kidapawan!2026"
@@ -46,11 +47,22 @@ class ShopBase(TestCase):
 
 
 class MenuAndCartTests(ShopBase):
-    def test_the_menu_is_public_and_lists_every_dish(self):
+    def setUp(self):
+        super().setUp()
+        self.sign_in()
+
+    def test_the_menu_lists_every_dish_and_sold_out_ones_cannot_be_ordered(self):
         response = self.client.get(reverse("shop:menu"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pepperoni Pizza")
         self.assertContains(response, "Truffle Pizza")
+        self.assertContains(response, "SOLD OUT", count=1)
+        self.assertContains(response, "Freshly baked, made to order.")  # no description yet
+
+    def test_ordering_says_so_and_puts_a_count_on_the_cart_icon(self):
+        response = self.client.post(reverse("shop:menu"), {"menu_id": self.pizza.pk}, follow=True)
+        self.assertContains(response, "Pepperoni Pizza added to cart")
+        self.assertContains(response, 'class="count"')
 
     def test_adding_keeps_ids_and_quantities_in_the_session(self):
         self.add(self.pizza, 2)
@@ -99,18 +111,24 @@ class MenuAndCartTests(ShopBase):
 
 class AccessTests(ShopBase):
     def test_signed_out_customers_are_sent_to_sign_in(self):
-        for name in ("shop:checkout", "shop:orders", "shop:profile"):
+        # Even the menu: log in or create an account first, as in the Android app.
+        for name in ("shop:menu", "shop:cart", "shop:checkout", "shop:orders", "shop:profile", "shop:profile-edit"):
             response = self.client.get(reverse(name))
             self.assertRedirects(
                 response, f"{reverse('shop:sign-in')}?next={reverse(name)}", fetch_redirect_response=False
             )
 
+    def test_adding_to_the_cart_needs_a_customer_too(self):
+        self.add(self.pizza)
+        self.assertEqual(self.cart(), {})
+
     def test_a_rider_account_is_turned_away(self):
         rider = User.objects.create_user("rico", "rico@example.com", PASSWORD, is_rider=True, is_customer=False)
         self.sign_in(rider)
-        response = self.client.get(reverse("shop:orders"))
-        self.assertEqual(response.status_code, 403)
-        self.assertTemplateUsed(response, "shop/not_customer.html")
+        for name in ("shop:menu", "shop:orders"):
+            response = self.client.get(reverse(name))
+            self.assertEqual(response.status_code, 403)
+            self.assertTemplateUsed(response, "shop/not_customer.html")
 
     def test_someone_elses_order_is_not_found(self):
         other = Customer.objects.create(user=User.objects.create_user("pedro", "pedro@example.com", PASSWORD))
@@ -231,11 +249,53 @@ class OrderPageTests(ShopBase):
     def test_the_page_shows_progress_and_polls_the_api(self):
         order = make_order(self.customer, status=OrderStatus.PREPARING)
         response = self.client.get(self.url(order))
-        steps = response.context["steps"]
-        self.assertEqual([s["done"] for s in steps], [True, True, True, False, False, False])
-        self.assertTrue(steps[2]["current"])
+        progress = response.context["p"]
+        self.assertEqual((progress["done"], progress["total"], progress["step_label"]), (3, 7, "Preparing"))
+        self.assertContains(response, "Step 3 of 7")
+        self.assertContains(response, "Your order is being prepared.")
         self.assertTrue(response.context["live"])
         self.assertEqual(response.context["track_config"]["orderUrl"], f"/api/orders/{order.pk}/")
+
+    def test_progress_follows_the_app_through_every_status(self):
+        expected = {
+            OrderStatus.PENDING_PAYMENT: (0, "Awaiting payment"),
+            OrderStatus.PENDING: (1, "Order placed"),
+            OrderStatus.CONFIRMED: (2, "Confirmed"),
+            OrderStatus.READY: (4, "Ready for pickup"),
+            OrderStatus.OUT_FOR_DELIVERY: (5, "Picked up"),
+            OrderStatus.DELIVERED: (7, "Delivered"),
+            OrderStatus.CANCELLED: (None, "Cancelled"),
+        }
+        for status, (done, label) in expected.items():
+            progress = display.progress(make_order(self.customer, status=status))
+            self.assertEqual((progress["done"], progress["step_label"]), (done, label), status)
+
+    def test_a_rider_on_the_road_is_step_six(self):
+        from delivery.models import Delivery
+
+        order = make_order(self.customer, status=OrderStatus.OUT_FOR_DELIVERY)
+        rider_user = User.objects.create_user("rico", "rico@example.com", PASSWORD, is_rider=True, is_customer=False)
+        rider = Rider.objects.create(user=rider_user)
+        Delivery.objects.create(order=order, rider=rider, status="in_transit")
+        progress = display.progress(Order.objects.get(pk=order.pk))
+        self.assertEqual(
+            (progress["done"], progress["step_label"], progress["style"]["label"]), (6, "On the way", "In transit")
+        )
+
+    def test_the_payment_card_shows_a_pay_button_while_unpaid(self):
+        order = make_order(self.customer, payment_type=PaymentType.GCASH, status=OrderStatus.PENDING_PAYMENT)
+        response = self.client.get(self.url(order))
+        self.assertContains(response, "Awaiting payment")
+        self.assertContains(response, "PAY WITH GCASH")
+        self.assertContains(response, "Waiting for your GCash payment to be confirmed.")
+
+    def test_the_progress_timeline_lists_each_change(self):
+        order = make_order(self.customer)
+        OrderStatusLog.objects.filter(order=order).delete()
+        OrderStatusLog.objects.create(order=order, status=OrderStatus.PENDING)
+        OrderStatusLog.objects.create(order=order, status=OrderStatus.CONFIRMED)
+        timeline = self.client.get(self.url(order)).context["timeline"]
+        self.assertEqual([t["label"] for t in timeline], ["Pending", "Confirmed"])
 
     def test_the_order_api_accepts_the_session(self):
         order = make_order(self.customer)
@@ -276,6 +336,8 @@ class OrderPageTests(ShopBase):
         make_order(other)
         response = self.client.get(reverse("shop:orders"))
         self.assertEqual(list(response.context["orders"]), [mine])
+        self.assertContains(response, "Order info")
+        self.assertContains(response, "1 of 7")
 
 
 class PaymentReturnTests(ShopBase):
@@ -328,17 +390,19 @@ class PaymentReturnTests(ShopBase):
 class AccountTests(ShopBase):
     def test_sign_up_makes_a_signed_in_customer(self):
         response = self.client.post(reverse("shop:sign-up"), {
-            "first_name": "Ana", "last_name": "Cruz", "username": "ana", "phone": "09171234567",
-            "email": "", "password": PASSWORD, "password_confirm": PASSWORD,
+            "name": "Ana Dela Cruz", "username": "ana", "phone": "09171234567",
+            "password": PASSWORD, "password_confirm": PASSWORD,
         })
         self.assertRedirects(response, reverse("shop:menu"), fetch_redirect_response=False)
         user = User.objects.get(username="ana")
+        # One Name box, split on the first space as the app does.
+        self.assertEqual((user.first_name, user.last_name), ("Ana", "Dela Cruz"))
         self.assertTrue(Customer.objects.filter(user=user).exists())
         self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
 
     def test_sign_up_shows_the_api_rules(self):
         response = self.client.post(reverse("shop:sign-up"), {
-            "first_name": "Ana", "username": "maria", "phone": "09171234567",
+            "name": "Ana", "username": "maria", "phone": "09171234567",
             "password": PASSWORD, "password_confirm": "different",
         })
         self.assertEqual(response.status_code, 200)
@@ -360,15 +424,35 @@ class AccountTests(ShopBase):
         self.assertContains(response, "Ribbon Rider app")
         self.assertNotIn("_auth_user_id", self.client.session)
 
-    def test_profile_saves_details_and_refuses_a_taken_email(self):
-        User.objects.create_user("pedro", "pedro@example.com", PASSWORD)
+    def test_signing_out_goes_back_to_login(self):
         self.sign_in()
-        data = {"first_name": "Maria", "last_name": "Santos", "phone": "0917"}
-        response = self.client.post(reverse("shop:profile"), {**data, "email": "PEDRO@example.com"})
-        self.assertContains(response, "already in use")
-        self.client.post(reverse("shop:profile"), {**data, "email": "new@example.com"})
+        response = self.client.post(reverse("shop:sign-out"))
+        self.assertRedirects(response, reverse("shop:sign-in"), fetch_redirect_response=False)
+
+    def test_the_profile_shows_the_details_read_only(self):
+        self.sign_in()
+        response = self.client.get(reverse("shop:profile"))
+        self.assertContains(response, "@maria")
+        self.assertContains(response, "EDIT PROFILE")
+        self.assertContains(response, "Not set")
+
+    def test_edit_profile_saves_details_and_the_default_address(self):
+        self.sign_in()
+        data = {"first_name": "Maria", "last_name": "Santos", "phone": "0917", "default_address": "Blue gate"}
+        response = self.client.post(reverse("shop:profile-edit"), data)
+        self.assertRedirects(response, reverse("shop:profile"), fetch_redirect_response=False)
         self.user.refresh_from_db()
-        self.assertEqual((self.user.last_name, self.user.email), ("Santos", "new@example.com"))
+        self.customer.refresh_from_db()
+        self.assertEqual(
+            (self.user.last_name, self.user.phone, self.user.email), ("Santos", "0917", "maria@example.com")
+        )
+        self.assertEqual(self.customer.default_address, "Blue gate")
+
+    def test_edit_profile_needs_a_first_name_and_phone(self):
+        self.sign_in()
+        response = self.client.post(reverse("shop:profile-edit"), {"first_name": "", "phone": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.context["form"].errors), {"first_name", "phone"})
 
 
 class PushTests(ShopBase):
@@ -440,7 +524,7 @@ class InstallableAppTests(TestCase):
         self.assertEqual(self.client.get(reverse("shop:icon", args=["secret.png"])).status_code, 404)
 
     def test_every_page_links_the_manifest_and_push_config(self):
-        response = self.client.get(reverse("shop:menu"))
+        response = self.client.get(reverse("shop:sign-in"))
         self.assertContains(response, reverse("shop:manifest"))
         self.assertContains(response, 'id="push-config"')
         self.assertContains(response, "apple-mobile-web-app-capable")

@@ -24,20 +24,21 @@ from django.templatetags.static import static
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from accounts.models import Customer, DevicePlatform, DeviceToken, User
+from accounts.models import Customer, DevicePlatform, DeviceToken
 from accounts.serializers import RegisterSerializer
 from core.geofence import distance_from_service_center_km
 from core.models import StoreSettings
 from menu.models import Menu
 from orders.constants import OrderStatus, PaymentStatus, PaymentType
 from orders.models import Order
-from orders.serializers import OrderCreateSerializer, payment_summary
+from orders.serializers import OrderCreateSerializer
 from orders.views import cancel_for_customer
 from payments import maya
 from payments.gateway import PayMongoError
 from payments.services import sync_order_payment
 from payments.views import start_checkout
 
+from . import display
 from .cart import Cart
 from .forms import CheckoutForm, ProfileForm, SignInForm, SignUpForm
 
@@ -46,15 +47,6 @@ logger = logging.getLogger(__name__)
 PUSH_SESSION_KEY = "shop_push_token"
 ICONS = {"icon-192.png", "icon-512.png", "icon-maskable-512.png", "badge-72.png", "apple-touch-icon.png", "favicon-64.png"}
 
-# The customer's view of the order's progress, in order.
-STEPS = [
-    (OrderStatus.PENDING, "Order received"),
-    (OrderStatus.CONFIRMED, "Confirmed"),
-    (OrderStatus.PREPARING, "In the oven"),
-    (OrderStatus.READY, "Ready for the rider"),
-    (OrderStatus.OUT_FOR_DELIVERY, "On the way"),
-    (OrderStatus.DELIVERED, "Delivered"),
-]
 LIVE_STATUSES = {OrderStatus.PENDING_PAYMENT, OrderStatus.PENDING, OrderStatus.CONFIRMED,
                  OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.OUT_FOR_DELIVERY}
 
@@ -95,8 +87,10 @@ def _copy_errors(form, errors):
 
 
 # -- menu and cart -----------------------------------------------------------
+# Signed in first, as in the Android app: the menu is the first screen after login.
 
 
+@customer_required
 @require_http_methods(["GET", "POST"])
 def menu(request):
     if request.method == "POST":
@@ -108,7 +102,7 @@ def menu(request):
             messages.error(request, "That item is not available right now.")
         else:
             Cart(request).add(item.pk)
-            messages.success(request, f"Added {item.name} to your cart.")
+            messages.success(request, f"{item.name} added to cart")
         return redirect(f"{reverse('shop:menu')}#item-{item.pk}" if item else reverse("shop:menu"))
 
     return render(request, "shop/menu.html", {
@@ -118,6 +112,7 @@ def menu(request):
     })
 
 
+@customer_required
 @require_http_methods(["GET", "POST"])
 def cart(request):
     basket = Cart(request)
@@ -135,7 +130,6 @@ def cart(request):
         "subtotal": basket.subtotal(items),
         "has_unavailable": any(not i["menu"].is_available for i in items),
         "store": StoreSettings.load(),
-        "tab": "cart",
     })
 
 
@@ -227,35 +221,53 @@ def checkout(request):
             "quoteUrl": reverse("orders:delivery-quote"),
             "subtotal": str(subtotal),
         },
-        "tab": "cart",
     })
 
 
 # -- orders ------------------------------------------------------------------
 
 
+PHOTO_W, PHOTO_H, PHOTO_STEP = 62, 88, 7
+
+
+def _with_list_details(order):
+    """The orders list row: item names, count, up to three stacked photos, progress."""
+    items = list(order.items.all())
+    order.item_names = ", ".join(i.menu.name for i in items)
+    order.item_count = sum(i.quantity for i in items)
+    shown = items[:3]
+    depth = max(len(shown), 1)
+    order.photos = [
+        {
+            "url": shown[i].menu.photo.url if i < len(shown) and shown[i].menu.photo else None,
+            "left": i * PHOTO_STEP,
+            "top": round(i * PHOTO_STEP * 0.6, 1),
+            "z": depth - i,  # the first item on top, as in the app
+        }
+        for i in range(depth)
+    ]
+    order.photo_box = (PHOTO_W + 4 + (depth - 1) * PHOTO_STEP, PHOTO_H + 4 + round((depth - 1) * PHOTO_STEP * 0.6))
+    order.progress = display.progress(order)
+    return order
+
+
 @customer_required
 @require_GET
 def orders(request):
-    mine = Order.objects.filter(customer__user=request.user).order_by("-placed_at")
-    return render(request, "shop/orders.html", {"orders": mine, "tab": "orders"})
-
-
-def _steps(order):
-    if order.status in (OrderStatus.CANCELLED, OrderStatus.PENDING_PAYMENT):
-        return []
-    reached = [s for s, _ in STEPS].index(order.status) if order.status in dict(STEPS) else -1
-    return [
-        {"label": label, "done": index <= reached, "current": index == reached}
-        for index, (_, label) in enumerate(STEPS)
-    ]
+    mine = (
+        Order.objects.filter(customer__user=request.user)
+        .select_related("delivery")
+        .prefetch_related("items__menu")
+        .order_by("-placed_at")
+    )
+    return render(request, "shop/orders.html", {"orders": [_with_list_details(o) for o in mine], "tab": "orders"})
 
 
 @customer_required
 @require_http_methods(["GET", "POST"])
 def order_detail(request, pk):
     order = get_object_or_404(
-        Order.objects.select_related("invoice", "delivery__rider__user").prefetch_related("items__menu"),
+        Order.objects.select_related("invoice", "delivery__rider__user").prefetch_related("items__menu", "status_logs"),
         pk=pk,
         customer__user=request.user,
     )
@@ -274,12 +286,28 @@ def order_detail(request, pk):
                 messages.success(request, f"{order.order_number} is cancelled.")
         return redirect("shop:order", pk=order.pk)
 
+    invoice = getattr(order, "invoice", None)
+    progress = display.progress(order)
+    method_label = display.PAYMENT_LABELS.get(order.payment_type, "")
     return render(request, "shop/order_detail.html", {
         "order": order,
         "items": order.items.all(),
-        "steps": _steps(order),
+        "p": progress,
+        "placed_at": display.full_date(order.placed_at),
         "can_pay": can_pay,
-        "payment": payment_summary(order),
+        "awaiting": can_pay,
+        "paid": paid,
+        "invoice": invoice,
+        "paid_at": display.full_date(invoice.paid_at) if invoice else None,
+        "payment_name": display.PAYMENT_NAMES.get(order.payment_type, order.get_payment_type_display()),
+        "method_label": method_label,
+        "chip": display.payment_chip(order, invoice),
+        "refund": display.refund_note(invoice, method_label or "account"),
+        "tracking_message": display.tracking_message(order),
+        "timeline": [
+            {**display.status_style(log.status), "when": display.full_date(log.changed_at)}
+            for log in order.status_logs.all()
+        ],
         "live": order.status in LIVE_STATUSES,
         "track_config": {
             "orderUrl": reverse("orders:order-detail", args=[order.pk]),
@@ -288,6 +316,7 @@ def order_detail(request, pk):
             "syncUrl": reverse("payments:sync") if can_pay else None,
             "orderId": order.pk,
             "status": order.status,
+            "deliveryStatus": progress["delivery_status"],
             "paymentStatus": order.payment_status,
             "destination": [float(order.delivery_latitude), float(order.delivery_longitude)],
         },
@@ -322,7 +351,7 @@ def payment_return(request, outcome):
     order.refresh_from_db()
 
     if order.payment_status == PaymentStatus.PAID:
-        messages.success(request, f"Payment received for {order.order_number}. The kitchen has your order.")
+        messages.success(request, f"Payment received for {order.order_number}.")
     elif outcome == "failed":
         messages.error(request, "The payment was not completed. You can try again or cancel the order.")
     else:
@@ -357,13 +386,18 @@ def sign_in(request):
 def sign_up(request):
     form = SignUpForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        serializer = RegisterSerializer(data=form.cleaned_data)
+        serializer = RegisterSerializer(data=form.registration_data())
         if serializer.is_valid():
             user = serializer.save()
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-            messages.success(request, f"Welcome, {user.first_name or user.username}! Pick something from the menu.")
+            messages.success(request, f"Welcome, {user.first_name or user.username}")
             return redirect("shop:menu")
-        _copy_errors(form, serializer.errors)
+        errors = dict(serializer.errors)
+        # The form has one Name box for the serializer's first and last name.
+        name_errors = [*errors.pop("first_name", []), *errors.pop("last_name", [])]
+        if name_errors:
+            errors["name"] = name_errors
+        _copy_errors(form, errors)
     return render(request, "shop/sign_up.html", {"form": form})
 
 
@@ -374,36 +408,48 @@ def sign_out(request):
         # This phone should stop getting this account's notifications.
         DeviceToken.objects.filter(user=request.user, fcm_token=token).delete()
     logout(request)
-    return redirect("shop:menu")
+    return redirect("shop:sign-in")
 
 
 @customer_required
-@require_http_methods(["GET", "POST"])
+@require_GET
 def profile(request):
     user = request.user
-    form = ProfileForm(
-        request.POST or None,
-        initial={"first_name": user.first_name, "last_name": user.last_name, "phone": user.phone, "email": user.email},
-    )
-    if request.method == "POST" and form.is_valid():
-        data = form.cleaned_data
-        email = data["email"]
-        if email and User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
-            form.add_error("email", "That email is already in use.")
-        else:
-            for field in ("first_name", "last_name", "phone", "email"):
-                setattr(user, field, data[field])
-            user.save(update_fields=["first_name", "last_name", "phone", "email"])
-            messages.success(request, "Your details are saved.")
-            return redirect("shop:profile")
+    customer = user.customer
     return render(request, "shop/profile.html", {
-        "form": form,
-        "customer": user.customer,
+        "customer": customer,
+        "has_pin": customer.default_latitude is not None and customer.default_longitude is not None,
         "push_on": DeviceToken.objects.filter(
             user=user, platform=DevicePlatform.WEB, fcm_token=request.session.get(PUSH_SESSION_KEY, "")
         ).exists(),
         "tab": "profile",
     })
+
+
+@customer_required
+@require_http_methods(["GET", "POST"])
+def profile_edit(request):
+    user = request.user
+    customer = user.customer
+    form = ProfileForm(
+        request.POST or None,
+        initial={
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "phone": user.phone,
+            "default_address": customer.default_address,
+        },
+    )
+    if request.method == "POST" and form.is_valid():
+        data = form.cleaned_data
+        for field in ("first_name", "last_name", "phone"):
+            setattr(user, field, data[field])
+        user.save(update_fields=["first_name", "last_name", "phone"])
+        customer.default_address = data["default_address"]
+        customer.save(update_fields=["default_address"])
+        messages.success(request, "Profile updated")
+        return redirect("shop:profile")
+    return render(request, "shop/profile_edit.html", {"form": form})
 
 
 # -- push notifications ------------------------------------------------------

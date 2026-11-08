@@ -1,23 +1,50 @@
 {% extends "shop/base.html" %}
 
-{% block title %}Orders{% endblock %}
+{% block title %}My Orders{% endblock %}
+
+{% block body_class %}has-tabs is-white{% endblock %}
+{% block appbar_title %}My Orders{% endblock %}
+{% block page_class %}page page--flush{% endblock %}
 
 {% block content %}
-<h1>Your orders</h1>
 {% if orders %}
-<ul class="order-list">
+<ul class="rows">
     {% for order in orders %}
+    {% with p=order.progress %}
     <li>
-        <a href="{% url 'shop:order' order.pk %}">
-            <span class="order-no">{{ order.order_number }}</span>
-            <span class="status status--{{ order.status }}">{{ order.get_status_display }}</span>
-            <span class="muted">{{ order.placed_at|date:"M j, g:i A" }}</span>
-            <span class="order-total">₱{{ order.total|floatformat:2 }}</span>
+        <a class="row row--order" href="{% url 'shop:order' order.pk %}" style="--c: {{ p.style.colour }}">
+            <span class="stack-photos" style="width: {{ order.photo_box.0 }}px; height: {{ order.photo_box.1 }}px" aria-hidden="true">
+                {% for photo in order.photos %}
+                <span class="tile" style="left: {{ photo.left }}px; top: {{ photo.top }}px; z-index: {{ photo.z }}">
+                    {% if photo.url %}<img src="{{ photo.url }}" alt="" loading="lazy">{% else %}<span class="ms">local_pizza</span>{% endif %}
+                </span>
+                {% endfor %}
+            </span>
+            <span class="row-body">
+                <span class="order-names">{{ order.item_names|default:order.order_number }}</span>
+                <span class="order-meta">
+                    <span class="badge badge--compact"><span class="ms" aria-hidden="true">{{ p.style.icon }}</span>{{ p.style.label }}</span>
+                    <span>{{ order.order_number }} • {{ order.item_count }} item{{ order.item_count|pluralize }} • ₱{{ order.total|floatformat:2 }}</span>
+                </span>
+                <span class="progress-head" style="--c: {{ p.label_colour }}">
+                    <span class="progress-label">{{ p.step_label }}</span>
+                    <span class="progress-count">{% if p.done is None %}—{% else %}{{ p.done }} of {{ p.total }}{% endif %}</span>
+                </span>
+                <span class="bar" style="--c: {{ p.bar_colour }}" aria-hidden="true"><span style="width: {{ p.percent }}%"></span></span>
+                <span class="order-actions">
+                    <span class="pill-btn">Order info</span>
+                    <span class="order-note{% if p.terminal %} is-final{% endif %}">{{ p.note }}</span>
+                </span>
+            </span>
         </a>
     </li>
+    {% endwith %}
     {% endfor %}
 </ul>
 {% else %}
-<p class="empty">No orders yet. <a href="{% url 'shop:menu' %}">Order your first pizza</a>.</p>
+<div class="empty">
+    <span class="ms" aria-hidden="true">receipt_long</span>
+    <p>You have not placed any orders yet.</p>
+</div>
 {% endif %}
 {% endblock %}

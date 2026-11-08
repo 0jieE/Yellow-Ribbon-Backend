@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{% block title %}Order{% endblock %} | Yellow Ribbon Pizza</title>
-    <meta name="theme-color" content="#F4B708">
+    <meta name="theme-color" content="#FFC107">
     <meta name="csrf-token" content="{{ csrf_token }}">
     <link rel="manifest" href="{% url 'shop:manifest' %}">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,46 +15,44 @@
     <link rel="icon" href="{% static 'shop/icons/favicon-64.png' %}" sizes="64x64">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Lilita+One&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+    {# Only the icons the pages use, so the icon font stays small. Names must stay in alphabetical order. #}
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL@0..1&icon_names=account_balance_wallet,add,arrow_back,arrow_forward,badge,cancel,check_circle,cloud_off,delete,delivery_dining,edit,error,home,hourglass_empty,hourglass_top,info,inventory_2,ios_share,local_fire_department,local_pizza,logout,my_location,notifications,open_in_new,payments,person,person_add,phone,place,receipt_long,refresh,remove,schedule,shopping_cart,task_alt,two_wheeler,visibility,visibility_off&display=block">
     <link rel="stylesheet" href="{% static 'shop/css/shop.css' %}">
     {% block head %}{% endblock %}
 </head>
-<body>
-    <header class="bar">
-        <a class="bar-brand" href="{% url 'shop:menu' %}">
-            <img src="{% static 'core/img/logo.png' %}" alt="" width="32" height="32">
-            <span>Yellow Ribbon</span>
-        </a>
-        {% block bar_action %}{% endblock %}
+<body class="{% block body_class %}has-tabs{% endblock %}">
+    {% block appbar %}
+    <header class="appbar">
+        {% block leading %}{% endblock %}
+        <h1 class="appbar-title">{% block appbar_title %}Yellow Ribbon Pizza{% endblock %}</h1>
+        <div class="appbar-actions">{% block actions %}{% endblock %}</div>
     </header>
+    {% endblock %}
 
-    <main class="page" id="main">
-        {% if messages %}
-        <ul class="notices" role="status">
-            {% for message in messages %}<li class="notice notice--{{ message.tags }}">{{ message }}</li>{% endfor %}
-        </ul>
-        {% endif %}
+    <main class="{% block page_class %}page{% endblock %}" id="main">
         {% block content %}{% endblock %}
     </main>
 
+    {% block bottom %}
     <nav class="tabs" aria-label="App">
         <a href="{% url 'shop:menu' %}"{% if tab == 'menu' %} aria-current="page"{% endif %}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 2 20h20L12 2Zm0 5.5 6 10.5H6l6-10.5Z"/><circle cx="12" cy="14" r="1.6"/></svg>
-            Menu
-        </a>
-        <a href="{% url 'shop:cart' %}"{% if tab == 'cart' %} aria-current="page"{% endif %}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 10.2A2 2 0 0 0 9.3 16H18a2 2 0 0 0 1.9-1.5L21.5 8H6.2"/><circle cx="10" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/></svg>
-            Cart{% if cart_count %}<span class="badge" aria-label="{{ cart_count }} items">{{ cart_count }}</span>{% endif %}
+            <span class="ms" aria-hidden="true">local_pizza</span>Menu
         </a>
         <a href="{% url 'shop:orders' %}"{% if tab == 'orders' %} aria-current="page"{% endif %}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6M9 12h6"/></svg>
-            Orders
+            <span class="ms" aria-hidden="true">receipt_long</span>Orders
         </a>
         <a href="{% url 'shop:profile' %}"{% if tab == 'profile' %} aria-current="page"{% endif %}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
-            Profile
+            <span class="ms" aria-hidden="true">person</span>Profile
         </a>
     </nav>
+    {% endblock %}
+
+    {% if messages %}
+    <ul class="snacks" role="status">
+        {% for message in messages %}<li class="snack snack--{{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
 
     {{ push_config|json_script:"push-config" }}
     {% block scripts %}{% endblock %}

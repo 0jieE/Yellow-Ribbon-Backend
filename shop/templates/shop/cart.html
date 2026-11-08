@@ -2,48 +2,75 @@
 
 {% block title %}Cart{% endblock %}
 
-{% block content %}
-<h1>Your cart</h1>
+{% block body_class %}is-white{% if subtotal %} has-footer{% endif %}{% endblock %}
 
+{% block leading %}<a class="icon-btn back" href="{% url 'shop:menu' %}" aria-label="Back to the menu"><span class="ms" aria-hidden="true">arrow_back</span></a>{% endblock %}
+{% block appbar_title %}My Cart{% if cart_count %} ({{ cart_count }}){% endif %}{% endblock %}
+
+{% block page_class %}page page--flush{% endblock %}
+
+{% block content %}
 {% if items %}
-<ul class="lines">
+<ul class="rows">
     {% for line in items %}
-    <li class="line{% if not line.menu.is_available %} is-out{% endif %}">
-        <div class="line-text">
-            <h2>{{ line.menu.name }}</h2>
-            {% if line.menu.is_available %}
-                <span class="muted">₱{{ line.menu.price|floatformat:"-2" }} each</span>
-            {% else %}
-                <span class="out">Not available right now, so it is left out of your order</span>
-            {% endif %}
+    <li>
+        <div class="row">
+            <div class="tile">
+                {% if line.menu.photo %}<img src="{{ line.menu.photo.url }}" alt="" loading="lazy">{% else %}<span class="ms" aria-hidden="true">local_pizza</span>{% endif %}
+            </div>
+            <div class="row-body">
+                <div class="row-head">
+                    <h2 class="row-name">{{ line.menu.name }}</h2>
+                    <form method="post">{% csrf_token %}
+                        <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
+                        <input type="hidden" name="quantity" value="0">
+                        <button type="submit" class="icon-btn" aria-label="Remove {{ line.menu.name }}" title="Remove"><span class="ms" aria-hidden="true">delete</span></button>
+                    </form>
+                </div>
+                <p class="row-each">₱{{ line.menu.price|floatformat:2 }} each</p>
+                {% if not line.menu.is_available %}
+                <p class="row-out">Not available right now, so it is left out of your order.</p>
+                {% endif %}
+                <div class="row-foot">
+                    <span class="row-total">₱{{ line.line_total|floatformat:2 }}</span>
+                    <div class="stepper" role="group" aria-label="Quantity of {{ line.menu.name }}">
+                        <form method="post">{% csrf_token %}
+                            <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
+                            <input type="hidden" name="quantity" value="{{ line.quantity|add:'-1' }}">
+                            <button type="submit" aria-label="{% if line.quantity == 1 %}Remove {{ line.menu.name }}{% else %}One less{% endif %}">
+                                <span class="ms" aria-hidden="true">{% if line.quantity > 1 %}remove{% else %}delete{% endif %}</span>
+                            </button>
+                        </form>
+                        <output>{{ line.quantity }}</output>
+                        <form method="post">{% csrf_token %}
+                            <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
+                            <input type="hidden" name="quantity" value="{{ line.quantity|add:'1' }}">
+                            <button type="submit" aria-label="One more"{% if not line.menu.is_available %} disabled{% endif %}><span class="ms" aria-hidden="true">add</span></button>
+                        </form>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="stepper" role="group" aria-label="Quantity of {{ line.menu.name }}">
-            <form method="post">{% csrf_token %}
-                <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
-                <input type="hidden" name="quantity" value="{{ line.quantity|add:'-1' }}">
-                <button type="submit" aria-label="{% if line.quantity == 1 %}Remove {{ line.menu.name }}{% else %}One less{% endif %}">−</button>
-            </form>
-            <span class="qty">{{ line.quantity }}</span>
-            <form method="post">{% csrf_token %}
-                <input type="hidden" name="menu_id" value="{{ line.menu.pk }}">
-                <input type="hidden" name="quantity" value="{{ line.quantity|add:'1' }}">
-                <button type="submit" aria-label="One more"{% if not line.menu.is_available %} disabled{% endif %}>+</button>
-            </form>
-        </div>
-        <span class="line-total">₱{{ line.line_total|floatformat:"-2" }}</span>
     </li>
     {% endfor %}
 </ul>
-
-<dl class="totals">
-    <div><dt>Subtotal</dt><dd>₱{{ subtotal|floatformat:2 }}</dd></div>
-    <div><dt>Delivery</dt><dd>Worked out from your address at checkout</dd></div>
-</dl>
-
-{% if subtotal %}
-<a class="btn btn--wide" href="{% url 'shop:checkout' %}">Check out</a>
-{% endif %}
 {% else %}
-<p class="empty">Your cart is empty. <a href="{% url 'shop:menu' %}">Pick something from the menu</a>.</p>
+<div class="empty">
+    <span class="ms" aria-hidden="true">shopping_cart</span>
+    <strong>Your cart is empty</strong>
+    <p>Add something from the menu to get started.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block bottom %}
+{% if subtotal %}
+<div class="footer">
+    <div class="footer-inner">
+        <div class="footer-row"><span>Subtotal</span><strong>₱{{ subtotal|floatformat:2 }}</strong></div>
+        <p class="footer-hint">Delivery fee added at checkout</p>
+        <a class="btn" href="{% url 'shop:checkout' %}"><span class="ms" aria-hidden="true">arrow_forward</span>CHECKOUT</a>
+    </div>
+</div>
 {% endif %}
 {% endblock %}

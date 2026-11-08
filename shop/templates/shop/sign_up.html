@@ -1,23 +1,33 @@
 {% extends "shop/base.html" %}
 
-{% block title %}Create an account{% endblock %}
+{% block title %}Create Account{% endblock %}
+
+{% block body_class %}{% endblock %}
+{% block leading %}<a class="icon-btn back" href="{% url 'shop:sign-in' %}" aria-label="Back to login"><span class="ms" aria-hidden="true">arrow_back</span></a>{% endblock %}
+{% block appbar_title %}Create Account{% endblock %}
+{% block page_class %}page page--center{% endblock %}
 
 {% block content %}
-<h1>Create an account</h1>
-<p>Already have one? <a href="{% url 'shop:sign-in' %}">Sign in</a>.</p>
+<div class="auth card card--raised">
+    <span class="ms fill auth-icon auth-icon--join" aria-hidden="true">person_add</span>
+    <h2 class="auth-title auth-title--join">Join Yellow Ribbon Pizza</h2>
 
-{% if form.non_field_errors %}
-<div class="alert" role="alert">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
-{% endif %}
+    {% if form.non_field_errors %}
+    <div class="error-box" role="alert"><span class="ms" aria-hidden="true">error</span><div>{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div></div>
+    {% endif %}
 
-<form method="post" class="form">
-    {% csrf_token %}
-    {% for field in form %}
-        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
-        {% for e in field.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
-    {% endfor %}
-    <button type="submit" class="btn btn--wide">Create account</button>
-</form>
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <label class="field">
+            <span class="sr-only">{{ field.label }}</span>
+            {{ field }}
+            {% for e in field.errors %}<span class="field-error">{{ e }}</span>{% endfor %}
+        </label>
+        {% endfor %}
+        <button type="submit" class="btn btn--amber btn--login">Register</button>
+    </form>
+</div>
 {% endblock %}
+
+{% block bottom %}{% endblock %}

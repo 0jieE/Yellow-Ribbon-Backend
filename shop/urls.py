@@ -16,6 +16,7 @@ urlpatterns = [
     path("orders/<int:pk>", views.order_detail, name="order"),
     path("payment/<str:outcome>", views.payment_return, name="payment-return"),
     path("profile/", views.profile, name="profile"),
+    path("profile/edit/", views.profile_edit, name="profile-edit"),
     path("sign-in/", views.sign_in, name="sign-in"),
     path("sign-up/", views.sign_up, name="sign-up"),
     path("sign-out/", views.sign_out, name="sign-out"),

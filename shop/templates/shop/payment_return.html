@@ -2,13 +2,22 @@
 
 {% block title %}{% if outcome == "success" %}Payment received{% else %}Payment not completed{% endif %}{% endblock %}
 
+{% block body_class %}{% endblock %}
+{% block page_class %}page page--center{% endblock %}
+
 {% block content %}
+<div class="auth card card--raised">
 {% if outcome == "success" %}
-    <h1>Payment received</h1>
-    <p>Thanks! Your order is being confirmed. Go back to the Yellow Ribbon app on your Home Screen: your order shows the new status there.</p>
+    <span class="ms fill auth-icon auth-icon--join auth-icon--ok" aria-hidden="true">check_circle</span>
+    <h1 class="auth-title auth-title--join auth-title--ok">Payment received</h1>
+    <p>Thanks! Go back to the Yellow Ribbon app on your Home Screen: your order shows the new status there.</p>
 {% else %}
-    <h1>Payment not completed</h1>
+    <span class="ms fill auth-icon auth-icon--join auth-icon--bad" aria-hidden="true">cancel</span>
+    <h1 class="auth-title auth-title--join auth-title--bad">Payment not completed</h1>
     <p>Your order has not been paid for. Open the Yellow Ribbon app on your Home Screen to try again or cancel the order.</p>
 {% endif %}
-<a class="btn" href="{% url 'shop:orders' %}">See my orders</a>
+    <a class="btn" href="{% url 'shop:orders' %}">SEE MY ORDERS</a>
+</div>
 {% endblock %}
+
+{% block bottom %}{% endblock %}

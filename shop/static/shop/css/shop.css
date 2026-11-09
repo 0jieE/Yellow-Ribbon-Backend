@@ -25,6 +25,7 @@
     --safe-b: env(safe-area-inset-bottom, 0px);
     --safe-t: env(safe-area-inset-top, 0px);
     --tabs-h: 70px;
+    --phone: 430px;
     color-scheme: light;
 }
 
@@ -46,6 +47,17 @@ body {
     overflow-x: clip;
 }
 body.is-white { background: var(--white); }
+
+/* On a computer or tablet the app keeps a phone's shape: one phone-wide
+   column in the middle of the screen, as on the phones it is made for. */
+@media (min-width: 600px) {
+    html { background: #2B2B2B; }
+    body {
+        max-width: var(--phone);
+        margin: 0 auto;
+        box-shadow: 0 0 24px rgba(0, 0, 0, 0.35);
+    }
+}
 
 img { max-width: 100%; display: block; }
 a { color: inherit; text-decoration: none; }
@@ -189,7 +201,7 @@ h1, h2, h3, p { margin: 0; }
     z-index: 40;
     display: grid;
     gap: 8px;
-    max-width: 560px;
+    max-width: calc(var(--phone) - 16px);
     margin: 0 auto;
     padding: 0;
     list-style: none;
@@ -376,7 +388,6 @@ textarea.input { min-height: 0; resize: vertical; }
     padding: 0;
     list-style: none;
 }
-@media (min-width: 600px) { .dishes { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 .dish {
     display: flex;
@@ -758,6 +769,9 @@ body.picker-open { overflow: hidden; }
     position: fixed;
     inset: 0;
     z-index: 60;
+    /* Inside the phone-wide column on a wide screen, like the rest. */
+    width: min(100%, var(--phone));
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     background: var(--page);

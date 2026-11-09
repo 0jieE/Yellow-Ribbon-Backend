@@ -4,7 +4,7 @@
 {% block title %}Checkout{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+{% if not google_maps_key %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">{% endif %}
 {% endblock %}
 
 {% block body_class %}has-footer{% endblock %}
@@ -31,12 +31,17 @@
             {% for e in form.delivery_address.errors %}<span class="field-error">{{ e }}</span>{% endfor %}
         </label>
 
-        <div class="map-wrap">
-            <div id="pin-map" class="map" role="application" aria-label="Map: move it to place the delivery pin"></div>
-            <span class="ms map-pin" aria-hidden="true">place</span>
-            <button type="button" class="map-fab" id="locate" aria-label="Use my location" title="Use my location"><span class="ms" aria-hidden="true">my_location</span></button>
+        {# The pin, as in the app: a button until one is set, then where it is and "Change". #}
+        <div class="pin-block" id="pin-empty">
+            <button type="button" class="pin-btn" data-picker-open><span class="ms" aria-hidden="true">add_location_alt</span>Pin delivery location</button>
+            <p class="pin-note">Required — we check it is inside the delivery area.</p>
         </div>
-        <p class="map-status" id="map-status" aria-live="polite"></p>
+        <div class="pin-set" id="pin-set" hidden>
+            <span class="ms fill" id="pin-icon" aria-hidden="true">place</span>
+            <span class="pin-text"><strong id="pin-title">Pinned on the map</strong><span id="pin-coords"></span></span>
+            <button type="button" class="pin-change" data-picker-open>Change</button>
+        </div>
+        <p class="field-error" id="pin-error" hidden>Pin your delivery location on the map first.</p>
         {{ form.delivery_latitude }}{{ form.delivery_longitude }}
 
         <label class="field">
@@ -82,6 +87,25 @@
 </form>
 
 {{ map_config|json_script:"map-config" }}
+
+<div class="picker" id="picker" role="dialog" aria-modal="true" aria-labelledby="picker-title" hidden>
+    <header class="appbar">
+        <button type="button" class="icon-btn back" data-picker-close aria-label="Back to checkout"><span class="ms" aria-hidden="true">arrow_back</span></button>
+        <h2 class="appbar-title" id="picker-title">Pin delivery location</h2>
+    </header>
+    <div class="picker-body">
+        <div class="picker-map" id="picker-map" aria-label="Map: drag the pin or tap where to deliver"></div>
+        <div class="zone" id="zone" aria-live="polite"><span class="ms fill" aria-hidden="true">check_circle</span><p></p></div>
+        <div class="picker-controls">
+            <button type="button" class="fab-ext" id="locate"><span class="ms" aria-hidden="true">my_location</span>Centre on my location</button>
+            <div class="picker-card">
+                <p class="picker-coords" id="picker-coords"></p>
+                <p class="picker-hint">Tap the map or drag the pin to adjust.</p>
+                <button type="button" class="btn btn--amber btn--login" id="picker-confirm">Confirm location</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block bottom %}
@@ -94,6 +118,10 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="{% static 'shop/js/checkout-map.js' %}"></script>
+{% if google_maps_key %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key|urlencode }}&v=weekly" defer></script>
+{% else %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+{% endif %}
+<script src="{% static 'shop/js/map-picker.js' %}" defer></script>
 {% endblock %}

@@ -2,7 +2,12 @@
 
 from rest_framework import serializers
 
-from orders.constants import DeliveryStatus, allowed_delivery_transitions
+from orders.constants import (
+    TERMINAL_ORDER_STATUSES,
+    DeliveryStatus,
+    OrderStatus,
+    allowed_delivery_transitions,
+)
 from orders.serializers import OrderItemSerializer
 
 from .models import Delivery
@@ -52,9 +57,50 @@ class DeliveryOrderSerializer(serializers.Serializer):
         return "0.00"
 
 
+# Why a rider holding an `assigned` delivery cannot pick it up yet.
+WAITING_FOR = {
+    OrderStatus.PENDING_PAYMENT: "The customer has not paid for this order yet.",
+    OrderStatus.PENDING: "The store has not accepted this order yet.",
+    OrderStatus.CONFIRMED: "The store has accepted this order and will start preparing it soon.",
+    OrderStatus.PREPARING: "The store is still preparing this order.",
+}
+
+OPEN_DELIVERY_STATUSES = (DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP, DeliveryStatus.IN_TRANSIT)
+
+
+def next_delivery_statuses(delivery):
+    """
+    The statuses the rider may move this delivery to right now. Pickup is
+    only offered once the order is ready, and nothing once the order is
+    finished, so the rider app never shows a button the server refuses.
+    """
+    order = delivery.order
+    if order.status in TERMINAL_ORDER_STATUSES:
+        return []
+    statuses = allowed_delivery_transitions(delivery.status)
+    if order.status != OrderStatus.READY:
+        statuses = [s for s in statuses if s != DeliveryStatus.PICKED_UP]
+    return statuses
+
+
+def waiting_for(delivery):
+    """A short reason the rider cannot act on this delivery yet, or None."""
+    order = delivery.order
+    if delivery.status not in OPEN_DELIVERY_STATUSES:
+        return None
+    if order.status == OrderStatus.CANCELLED:
+        return "This order was cancelled."
+    if order.status == OrderStatus.DELIVERED:
+        return "This order is already delivered."
+    if delivery.status == DeliveryStatus.ASSIGNED and order.status != OrderStatus.READY:
+        return WAITING_FOR.get(order.status, "This order is not ready for pickup yet.")
+    return None
+
+
 class DeliverySerializer(serializers.ModelSerializer):
     order = DeliveryOrderSerializer(read_only=True)
     next_statuses = serializers.SerializerMethodField()
+    waiting_for = serializers.SerializerMethodField()
 
     class Meta:
         model = Delivery
@@ -66,13 +112,19 @@ class DeliverySerializer(serializers.ModelSerializer):
             "assigned_at",
             "picked_up_at",
             "delivered_at",
+            "failure_reason",
+            "failed_at",
             "next_statuses",
+            "waiting_for",
             "order",
         ]
         read_only_fields = fields
 
     def get_next_statuses(self, obj):
-        return [str(s) for s in allowed_delivery_transitions(obj.status)]
+        return [str(s) for s in next_delivery_statuses(obj)]
+
+    def get_waiting_for(self, obj):
+        return waiting_for(obj)
 
 
 class DeliveryStatusUpdateSerializer(serializers.Serializer):

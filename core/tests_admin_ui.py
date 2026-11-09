@@ -391,7 +391,7 @@ class AssignRiderActionTests(AdminUITestBase):
 
         self.assertFalse(Delivery.objects.exists())
 
-    def test_already_assigned_order_is_skipped(self):
+    def test_an_assigned_order_changes_rider_until_pickup(self):
         order = make_order(self.customer, status=OrderStatus.CONFIRMED)
         other = Rider.objects.create(
             user=User.objects.create_user(
@@ -402,12 +402,16 @@ class AssignRiderActionTests(AdminUITestBase):
                 is_customer=False,
             )
         )
-        Delivery.objects.create(order=order, rider=other)
+        delivery = Delivery.objects.create(order=order, rider=other)
 
+        self.run_action("assign_rider", [order], rider=self.rider.pk)
+        self.assertEqual(Delivery.objects.get(order=order).rider, self.rider)
+
+        # Once picked up it stays with that rider.
+        Delivery.objects.filter(pk=delivery.pk).update(status="picked_up", rider=other)
         response = self.run_action("assign_rider", [order], rider=self.rider.pk)
-
         self.assertEqual(Delivery.objects.get(order=order).rider, other)
-        self.assertTrue(any("already assigned" in m for m in self.flash(response)))
+        self.assertTrue(any("already picked up" in m for m in self.flash(response)))
 
     def test_deactivated_rider_is_refused(self):
         self.rider_user.is_active = False

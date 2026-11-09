@@ -43,7 +43,7 @@ class DeliveryAdmin(ModelAdmin):
     fieldsets = (
         (None, {"fields": ("order", "rider", "status", "rider_earnings")}),
         ("Proof of delivery", {"fields": ("proof_of_delivery", "proof_preview")}),
-        ("Timeline", {"fields": ("assigned_at", "picked_up_at", "delivered_at")}),
+        ("Timeline", {"fields": ("assigned_at", "picked_up_at", "delivered_at", "failed_at", "failure_reason")}),
     )
 
     @display(description="status", ordering="status", label=DELIVERY_STATUS_LABELS)

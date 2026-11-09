@@ -72,6 +72,16 @@ def notify_rider_assigned(order, rider):
     )
 
 
+def notify_rider_unassigned(order, rider):
+    """The store gave a delivery this rider had not picked up yet to another rider."""
+    notify_users(
+        rider.user,
+        "Delivery reassigned",
+        f"{order.order_number} was given to another rider. You do not need to pick it up.",
+        _order_data(order, event="unassigned", rider_id=rider.pk),
+    )
+
+
 def notify_rider_order_ready(order, rider):
     """The store has finished an order this rider is assigned to."""
     notify_users(
@@ -123,7 +133,7 @@ def notify_delivery_failed(order, delivery):
     """
     user = delivery.rider.user
     who = user.get_full_name() or user.username
-    reason = (order.cancel_reason or "").strip()
+    reason = (delivery.failure_reason or order.cancel_reason or "").strip()
     detail = f" — {reason}" if reason else ""
 
     notify_admins(

@@ -220,7 +220,10 @@ def checkout(request):
             ),
             "quoteUrl": reverse("orders:delivery-quote"),
             "subtotal": str(subtotal),
+            "city": store.service_area_city,
+            "googleKey": bool(settings.GOOGLE_MAPS_BROWSER_KEY),
         },
+        "google_maps_key": settings.GOOGLE_MAPS_BROWSER_KEY,
     })
 
 

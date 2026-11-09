@@ -173,6 +173,21 @@ class CheckoutTests(ShopBase):
         self.assertEqual(self.customer.default_address, "Green gate")
         self.assertEqual(self.customer.default_latitude, Decimal("7.009500"))
 
+    @override_settings(GOOGLE_MAPS_BROWSER_KEY="browser-key-123")
+    def test_the_map_picker_uses_google_maps_with_the_browser_key(self):
+        response = self.client.get(reverse("shop:checkout"))
+        self.assertContains(response, "Pin delivery location")
+        self.assertContains(response, "maps.googleapis.com/maps/api/js?key=browser-key-123")
+        self.assertNotContains(response, "leaflet.js")
+        self.assertTrue(response.context["map_config"]["googleKey"])
+
+    @override_settings(GOOGLE_MAPS_SERVER_KEY="server-secret", GOOGLE_MAPS_BROWSER_KEY="")
+    def test_without_a_browser_key_the_picker_uses_openstreetmap_and_never_the_server_key(self):
+        response = self.client.get(reverse("shop:checkout"))
+        self.assertContains(response, "leaflet.js")
+        self.assertNotContains(response, "maps.googleapis.com")
+        self.assertNotContains(response, "server-secret")
+
     def test_no_pin_asks_for_one(self):
         response = self.place(delivery_latitude="", delivery_longitude="")
         self.assertEqual(response.status_code, 200)

@@ -238,11 +238,13 @@ class AdminStatusUpdateTests(AdminTestBase):
         self.assertIsNotNone(self.order.confirmed_at)
 
     def test_delivered_at_is_stamped(self):
+        # Delivered is the rider's step now, which goes through the same writer.
+        from orders.admin_api import apply_status_change
+
         self.order.status = OrderStatus.OUT_FOR_DELIVERY
         self.order.save()
 
-        self.client.force_authenticate(self.admin)
-        self.client.patch(self.status_url(self.order), {"status": "delivered"}, format="json")
+        apply_status_change(self.order, OrderStatus.DELIVERED, changed_by=self.rider_user)
 
         self.order.refresh_from_db()
         self.assertIsNotNone(self.order.delivered_at)
@@ -274,17 +276,23 @@ class AdminStatusUpdateTests(AdminTestBase):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_full_happy_path(self):
+    def test_full_store_path(self):
+        # The store takes it as far as ready; the rider app does the rest.
         self.client.force_authenticate(self.admin)
-        for nxt in ("confirmed", "preparing", "ready", "out_for_delivery", "delivered"):
+        for nxt in ("confirmed", "preparing", "ready"):
             response = self.client.patch(
                 self.status_url(self.order), {"status": nxt}, format="json"
             )
             self.assertEqual(response.status_code, status.HTTP_200_OK, nxt)
 
+        response = self.client.patch(
+            self.status_url(self.order), {"status": "out_for_delivery"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
         self.order.refresh_from_db()
-        self.assertEqual(self.order.status, OrderStatus.DELIVERED)
-        self.assertEqual(OrderStatusLog.objects.filter(order=self.order).count(), 5)
+        self.assertEqual(self.order.status, OrderStatus.READY)
+        self.assertEqual(OrderStatusLog.objects.filter(order=self.order).count(), 3)
 
 
 class AdminAssignTests(AdminTestBase):
@@ -368,7 +376,7 @@ class AdminAssignTests(AdminTestBase):
 
         self.assertEqual(Delivery.objects.filter(rider=self.rider).count(), 4)
 
-    def test_batching_still_refuses_an_already_assigned_order(self):
+    def test_a_second_assign_before_pickup_changes_the_rider(self):
         other_rider = Rider.objects.create(
             user=User.objects.create_user(
                 username="bong",
@@ -387,8 +395,10 @@ class AdminAssignTests(AdminTestBase):
             self.assign_url(self.order), {"rider_id": other_rider.pk}, format="json"
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # Still one delivery, now with the other rider (see tests_order_flow).
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(Delivery.objects.filter(order=self.order).count(), 1)
+        self.assertEqual(Delivery.objects.get(order=self.order).rider, other_rider)
 
     def test_batching_still_refuses_an_unpaid_order(self):
         gcash = make_order(

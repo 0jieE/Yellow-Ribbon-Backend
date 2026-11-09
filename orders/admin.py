@@ -16,13 +16,11 @@ from core.admin_dashboard import (
     peso,
 )
 from core.admin_tools import csv_export_action
-from core.notifications import notify_rider_assigned
-from delivery.models import Delivery
 from payments.admin_actions import retry_refunds_for
 
-from .admin_api import apply_status_change
+from .admin_api import apply_status_change, assign_rider
 from .admin_serializers import AssignRiderSerializer
-from .constants import OrderStatus, is_valid_transition
+from .constants import OrderStatus, is_valid_admin_transition
 from .models import Order, OrderItem, OrderStatusLog
 
 
@@ -235,7 +233,7 @@ class OrderAdmin(ModelAdmin):
         for pk in list(queryset.values_list("pk", flat=True)):
             with transaction.atomic():
                 order = Order.objects.select_for_update().get(pk=pk)
-                if not is_valid_transition(order.status, new_status):
+                if not is_valid_admin_transition(order.status, new_status):
                     skipped.append(f"{order.order_number} ({order.get_status_display().lower()})")
                     continue
                 apply_status_change(order, new_status, changed_by=request.user, reason=reason)
@@ -293,11 +291,7 @@ class OrderAdmin(ModelAdmin):
                 if not serializer.is_valid():
                     skipped.append(f"{order.order_number}: {_first_error(serializer)}")
                     continue
-                rider = serializer.validated_data["rider"]
-                Delivery.objects.create(
-                    order=order, rider=rider, rider_earnings=serializer.rider_earnings()
-                )
-                notify_rider_assigned(order, rider)
+                assign_rider(order, serializer)
                 assigned += 1
 
         if assigned:

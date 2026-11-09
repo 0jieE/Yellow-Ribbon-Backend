@@ -7,7 +7,12 @@ from rest_framework import serializers
 
 from accounts.models import Rider
 
-from .constants import OrderStatus, allowed_transitions
+from .constants import (
+    RIDER_ASSIGNABLE_STATUSES,
+    DeliveryStatus,
+    OrderStatus,
+    admin_allowed_transitions,
+)
 from .models import Order
 from .serializers import (
     OrderItemSerializer,
@@ -27,6 +32,8 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         source="customer.user.phone", read_only=True, default=""
     )
     next_statuses = serializers.SerializerMethodField()
+    can_assign_rider = serializers.SerializerMethodField()
+    can_change_rider = serializers.SerializerMethodField()
     rider = serializers.SerializerMethodField()
     payment = serializers.SerializerMethodField()
 
@@ -56,6 +63,8 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "customer_name",
             "customer_phone",
             "next_statuses",
+            "can_assign_rider",
+            "can_change_rider",
             "rider",
             "payment",
             "items",
@@ -71,8 +80,18 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         return user.get_full_name() or user.username
 
     def get_next_statuses(self, obj):
-        """Lets the admin app render only the buttons that will be accepted."""
-        return [str(s) for s in allowed_transitions(obj.status)]
+        """
+        Lets the admin app render only the buttons that will be accepted.
+        Never out_for_delivery or delivered: the rider's pickup and drop-off
+        move those.
+        """
+        return [str(s) for s in admin_allowed_transitions(obj.status)]
+
+    def get_can_assign_rider(self, obj):
+        return can_assign_rider(obj)
+
+    def get_can_change_rider(self, obj):
+        return can_change_rider(obj)
 
     def get_rider(self, obj):
         delivery = getattr(obj, "delivery", None)
@@ -87,7 +106,30 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "phone": user.phone,
             "delivery_status": delivery.status,
             "rider_earnings": str(delivery.rider_earnings),
+            "failure_reason": delivery.failure_reason or None,
+            "failed_at": serializers.DateTimeField().to_representation(delivery.failed_at)
+            if delivery.failed_at
+            else None,
         }
+
+
+def _delivery(order):
+    return getattr(order, "delivery", None)
+
+
+def can_assign_rider(order):
+    """Accepted, still at the store, and nobody assigned yet."""
+    return order.status in RIDER_ASSIGNABLE_STATUSES and _delivery(order) is None
+
+
+def can_change_rider(order):
+    """Someone is assigned but has not picked the order up."""
+    delivery = _delivery(order)
+    return (
+        order.status in RIDER_ASSIGNABLE_STATUSES
+        and delivery is not None
+        and delivery.status == DeliveryStatus.ASSIGNED
+    )
 
 
 class OrderStatusUpdateSerializer(serializers.Serializer):
@@ -95,8 +137,15 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
     PATCH /api/admin/orders/{id}/status/
 
     Rejects illegal jumps — an order cannot go from pending straight to
-    delivered (spec section 5).
+    delivered (spec section 5) — and the two steps that belong to the rider.
     """
+
+    RIDER_STEPS = {
+        OrderStatus.OUT_FOR_DELIVERY: (
+            "The rider app sends an order out for delivery when the rider picks it up."
+        ),
+        OrderStatus.DELIVERED: "The rider app marks an order delivered at the door.",
+    }
 
     status = serializers.ChoiceField(choices=OrderStatus.choices)
 
@@ -108,9 +157,14 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
                 f"This order is already {order.get_status_display().lower()}."
             )
 
-        legal = allowed_transitions(order.status)
+        legal = admin_allowed_transitions(order.status)
         if value not in legal:
             current = order.get_status_display().lower()
+            if value in self.RIDER_STEPS and order.status not in (
+                OrderStatus.DELIVERED,
+                OrderStatus.CANCELLED,
+            ):
+                raise serializers.ValidationError(self.RIDER_STEPS[value])
             if not legal:
                 raise serializers.ValidationError(
                     f"This order is {current} and can no longer change status."
@@ -126,32 +180,40 @@ class AssignRiderSerializer(serializers.Serializer):
     """
     POST /api/admin/orders/{id}/assign/ — body {"rider_id": N}.
 
-    Creates the Delivery and snapshots rider_earnings.
+    Assigns a rider once the store has accepted the order (confirmed,
+    preparing or ready), or changes the rider while the delivery is still
+    `assigned`. Once the rider has picked the order up it stays with them.
+    After validation, `reassigning` is the delivery being handed over, or None
+    for a first assignment.
     """
 
     rider_id = serializers.IntegerField()
 
-    # An unpaid GCash order must not reach a rider, and neither should an
-    # order that is already finished.
-    UNASSIGNABLE = {
-        OrderStatus.PENDING_PAYMENT,
-        OrderStatus.DELIVERED,
-        OrderStatus.CANCELLED,
+    NOT_YET = {
+        OrderStatus.PENDING_PAYMENT: "This order is still waiting for payment. Assign a rider once it is paid and accepted.",
+        OrderStatus.PENDING: "Accept the order before assigning a rider.",
     }
 
     def validate(self, attrs):
         order = self.context["order"]
+        self.reassigning = None
 
-        if order.status in self.UNASSIGNABLE:
+        if order.status in self.NOT_YET:
+            raise serializers.ValidationError(self.NOT_YET[order.status])
+
+        delivery = _delivery(order)
+        if delivery is not None and delivery.status != DeliveryStatus.ASSIGNED:
+            raise serializers.ValidationError(
+                f"{delivery.rider.user.username} has already picked up {order.order_number}, "
+                "so the rider can no longer be changed."
+                if delivery.status != DeliveryStatus.FAILED
+                else f"The delivery of {order.order_number} has failed. Cancel the order instead."
+            )
+
+        if order.status not in RIDER_ASSIGNABLE_STATUSES:
             raise serializers.ValidationError(
                 f"An order that is {order.get_status_display().lower()} "
                 "cannot be assigned to a rider."
-            )
-
-        if hasattr(order, "delivery"):
-            raise serializers.ValidationError(
-                f"{order.order_number} is already assigned to "
-                f"{order.delivery.rider.user.username}."
             )
 
         try:
@@ -165,6 +227,13 @@ class AssignRiderSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"rider_id": f"{rider.user.username}'s account is deactivated."}
             )
+
+        if delivery is not None:
+            if delivery.rider_id == rider.pk:
+                raise serializers.ValidationError(
+                    f"{order.order_number} is already assigned to {rider.user.username}."
+                )
+            self.reassigning = delivery
 
         # No check on how many deliveries the rider already holds: they
         # collect a batch at the store and work through it. Only one may be

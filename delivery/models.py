@@ -48,6 +48,10 @@ class Delivery(models.Model):
     assigned_at = models.DateTimeField(auto_now_add=True)
     picked_up_at = models.DateTimeField(null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
+    # Why it ended as failed: the rider's reason, or "Order cancelled" when
+    # the order was cancelled while the delivery was still open.
+    failure_reason = models.CharField(max_length=255, blank=True, default="")
+    failed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "deliveries"

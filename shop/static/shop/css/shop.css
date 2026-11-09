@@ -509,18 +509,6 @@ textarea.input { min-height: 0; resize: vertical; }
 .map-wrap--track { margin-top: 0; }
 .map-wrap--track .map { height: 260px; }
 .delivery-note { margin-top: 6px; font-size: 12px; color: var(--grey); }
-.map-pin {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    z-index: 500;
-    margin: -40px 0 0 -20px;
-    font-size: 40px;
-    color: #E53935;
-    font-variation-settings: "FILL" 1;
-    pointer-events: none;
-    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.3);
-}
 .map-fab {
     position: absolute;
     left: 8px;
@@ -537,8 +525,6 @@ textarea.input { min-height: 0; resize: vertical; }
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     cursor: pointer;
 }
-.map-status { min-height: 1.5em; margin: 8px 4px 12px; font-size: 12.5px; color: var(--grey-600); }
-.map-status.warn { color: #C62828; font-weight: 500; }
 
 .sum-row { display: flex; justify-content: space-between; gap: 12px; }
 .sum-row + .sum-row { margin-top: 6px; }
@@ -724,3 +710,110 @@ textarea.input { min-height: 0; resize: vertical; }
 .auth-icon--ok, .auth-title--ok { color: #2E7D32; }
 .auth-icon--bad, .auth-title--bad { color: #C62828; }
 .auth > p { margin-bottom: 20px; line-height: 1.5; }
+
+/* -- delivery pin on checkout, and the full-screen picker ---------------------- */
+
+.pin-block { margin-top: 14px; }
+.pin-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--grey-400);
+    border-radius: 20px;
+    background: none;
+    color: #6750A4;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.pin-btn .ms { font-size: 18px; }
+.pin-note { margin-top: 6px; font-size: 12px; color: var(--grey); }
+.pin-set {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--ink);
+}
+.pin-set > .ms { color: var(--amber); }
+.pin-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pin-text strong { color: var(--white); font-size: 13px; font-weight: 700; }
+.pin-text span { color: rgba(255, 255, 255, 0.6); font-size: 11.5px; }
+.pin-change { padding: 8px 12px; border: 0; border-radius: 20px; background: none; color: var(--amber); font-weight: 500; cursor: pointer; }
+.pin-set.is-out { background: var(--red-50); }
+.pin-set.is-out > .ms { color: var(--red); }
+.pin-set.is-out strong { color: var(--red-900); }
+.pin-set.is-out .pin-text span { color: #D32F2F; }
+.pin-set.is-out .pin-change { color: var(--red-900); }
+#pin-error { margin: 8px 4px 0; }
+.check { margin-top: 14px; }
+
+body.picker-open { overflow: hidden; }
+.picker {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    background: var(--page);
+}
+.picker .appbar { position: relative; }
+.picker-body { position: relative; flex: 1; min-height: 0; }
+.picker-map { position: absolute; inset: 0; background: #E5E3DF; }
+.picker .leaflet-top { top: 64px; }
+.zone {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #E8F5E9;
+    color: #1B5E20;
+    font-size: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.zone .ms { font-size: 20px; color: #4CAF50; }
+.zone.is-out { background: var(--red-50); color: var(--red-900); }
+.zone.is-out .ms { color: var(--red); }
+.picker-controls {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: calc(16px + var(--safe-b));
+    z-index: 500;
+    display: grid;
+    gap: 12px;
+    pointer-events: none;
+}
+.picker-controls > * { pointer-events: auto; }
+.fab-ext {
+    justify-self: end;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 20px 0 16px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--white);
+    color: #000;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+.fab-ext:disabled { color: var(--grey); }
+.picker-card { padding: 12px; border-radius: 12px; background: var(--white); text-align: center; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
+.picker-coords { font-size: 13px; font-weight: 700; }
+.picker-hint { margin-top: 4px; font-size: 12px; color: var(--grey); }
+.picker-card .btn { margin-top: 10px; }

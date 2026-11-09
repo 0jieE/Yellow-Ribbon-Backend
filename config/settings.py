@@ -27,6 +27,7 @@ env = environ.Env(
     SERVICE_AREA_CENTER_LNG=(float, 125.0894),
     SERVICE_AREA_RADIUS_KM=(float, 8.0),
     GOOGLE_MAPS_SERVER_KEY=(str, ""),
+    GOOGLE_MAPS_BROWSER_KEY=(str, ""),
     GOOGLE_ROUTES_TIMEOUT_SECONDS=(float, 5.0),
     GOOGLE_ROUTES_TRAVEL_MODE=(str, "TWO_WHEELER"),
     MAYA_PUBLIC_KEY=(str, ""),
@@ -357,6 +358,12 @@ SERVICE_AREA_RADIUS_KM = env("SERVICE_AREA_RADIUS_KM")
 # ---------------------------------------------------------------------
 
 GOOGLE_MAPS_SERVER_KEY = env("GOOGLE_MAPS_SERVER_KEY")
+
+# For the customer web app's map picker (Maps JavaScript API). It is sent to
+# every browser, so it is its own key, restricted to this site's address and
+# to the Maps JavaScript API, never the server key above. Blank: the picker
+# uses OpenStreetMap instead.
+GOOGLE_MAPS_BROWSER_KEY = env("GOOGLE_MAPS_BROWSER_KEY")
 
 # Kept short so a slow Maps call never stalls rider assignment.
 GOOGLE_ROUTES_TIMEOUT_SECONDS = env("GOOGLE_ROUTES_TIMEOUT_SECONDS")

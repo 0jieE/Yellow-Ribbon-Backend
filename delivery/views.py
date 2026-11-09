@@ -20,6 +20,7 @@ from orders.constants import (
     ACTIVE_DELIVERY_STATUSES,
     TERMINAL_DELIVERY_STATUSES,
     DeliveryStatus,
+    TERMINAL_ORDER_STATUSES,
     OrderStatus,
     PaymentStatus,
     PaymentType,
@@ -39,6 +40,7 @@ from .serializers import (
 DELIVERY_TIMESTAMPS = {
     DeliveryStatus.PICKED_UP: "picked_up_at",
     DeliveryStatus.DELIVERED: "delivered_at",
+    DeliveryStatus.FAILED: "failed_at",
 }
 
 
@@ -81,15 +83,35 @@ class RiderDeliveryViewSet(
     @action(detail=True, methods=["patch"], url_path="status", url_name="status")
     def change_status(self, request, pk=None):
         with transaction.atomic():
+            # The order is locked before the delivery, the same order as a
+            # cancel or a reassign takes them, so the two cannot deadlock.
+            order_id = (
+                Delivery.objects.filter(pk=pk, rider__user=request.user)
+                .values_list("order_id", flat=True)
+                .first()
+            )
+            order = Order.objects.select_for_update().filter(pk=order_id).first()
             delivery = (
                 Delivery.objects.select_for_update()
                 .filter(pk=pk, rider__user=request.user)
                 .first()
             )
-            if delivery is None:
+            if order is None or delivery is None:
+                # Not theirs, or handed to another rider a moment ago.
                 return Response(
                     {"error": "No Delivery matches the given query."},
                     status=http.HTTP_404_NOT_FOUND,
+                )
+
+            if order.status in TERMINAL_ORDER_STATUSES:
+                return Response(
+                    {
+                        "error": (
+                            f"{order.order_number} is {order.get_status_display().lower()}, "
+                            "so this delivery can no longer change."
+                        )
+                    },
+                    status=http.HTTP_400_BAD_REQUEST,
                 )
 
             serializer = DeliveryStatusUpdateSerializer(
@@ -97,8 +119,6 @@ class RiderDeliveryViewSet(
             )
             serializer.is_valid(raise_exception=True)
             new_status = serializer.validated_data["status"]
-
-            order = Order.objects.select_for_update().get(pk=delivery.order_id)
 
             # The order enum documents `ready` as "Ready for rider pickup", so
             # a rider cannot collect food the kitchen has not finished.
@@ -116,6 +136,9 @@ class RiderDeliveryViewSet(
 
             fields = ["status"]
             delivery.status = new_status
+            if new_status == DeliveryStatus.FAILED:
+                delivery.failure_reason = serializer.validated_data.get("failure_reason", "")[:255]
+                fields.append("failure_reason")
             stamp = DELIVERY_TIMESTAMPS.get(new_status)
             if stamp and getattr(delivery, stamp) is None:
                 setattr(delivery, stamp, timezone.now())
@@ -177,12 +200,9 @@ class RiderDeliveryViewSet(
             notify_delivery_completed(order)
 
         elif new_status == DeliveryStatus.FAILED:
-            # The order is deliberately left where it is. A failed drop-off is
-            # an admin decision — retry with another rider, or cancel.
-            reason = validated.get("failure_reason", "")
-            if reason and not order.cancel_reason:
-                order.cancel_reason = reason
-                order.save(update_fields=["cancel_reason"])
+            # The order is deliberately left out for delivery: what happens
+            # next (cancel, which refunds a paid order) is the store's call.
+            # The reason is kept on the delivery, where the admin app shows it.
 
             # Nothing else moves this order, so without this push a failed
             # delivery would sit unnoticed until someone opened the dashboard.

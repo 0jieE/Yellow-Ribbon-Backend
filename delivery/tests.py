@@ -163,7 +163,8 @@ class DeliveryListTests(RiderTestBase):
         item = self.client.get(self.list_url).data[0]
 
         self.assertEqual(item["rider_earnings"], "30.00")
-        self.assertEqual(item["next_statuses"], ["failed", "picked_up"])
+        # Failing is only for after pickup; before it the store changes the rider.
+        self.assertEqual(item["next_statuses"], ["picked_up"])
 
         order = item["order"]
         self.assertEqual(order["order_number"], self.order.order_number)
@@ -318,8 +319,11 @@ class DeliveryStatusTests(RiderTestBase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.order.refresh_from_db()
+        self.delivery.refresh_from_db()
         self.assertEqual(self.order.status, OrderStatus.OUT_FOR_DELIVERY)
-        self.assertEqual(self.order.cancel_reason, "Nobody at the gate")
+        # The reason is the delivery's; the order is not cancelled.
+        self.assertEqual(self.delivery.failure_reason, "Nobody at the gate")
+        self.assertEqual(self.order.cancel_reason, "")
 
     def test_cannot_touch_another_riders_delivery(self):
         other_order = self.make_order()

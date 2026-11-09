@@ -110,6 +110,7 @@ disk, where they will not survive a deploy. Set all three.
 | Name | Notes |
 |---|---|
 | `GOOGLE_MAPS_SERVER_KEY` | Restrict it by IP or API in Google Cloud Console. It must **not** be the key shipped inside the Flutter apps. |
+| `GOOGLE_MAPS_BROWSER_KEY` | Optional: Google Maps for the web app's map picker. It is visible to every visitor, so make it a separate key restricted to **Websites** `https://yellow-ribbon-backend.onrender.com/*` and to the **Maps JavaScript API** only. Blank: the picker uses OpenStreetMap. |
 | `PAYMONGO_PUBLIC_KEY` | |
 | `PAYMONGO_SECRET_KEY` | |
 | `PAYMONGO_WEBHOOK_SECRET` | Regenerate after step 6 — the webhook URL changes |

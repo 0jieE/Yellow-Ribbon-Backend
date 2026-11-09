@@ -17,6 +17,7 @@ from core.notifications import (
     notify_rider_assigned,
     notify_rider_order_cancelled,
     notify_rider_order_ready,
+    notify_rider_unassigned,
 )
 from core.pagination import AdminOrderPagination
 from core.permissions import IsAdminUser
@@ -30,7 +31,6 @@ from .admin_serializers import (
 from .constants import (
     ACTIVE_DELIVERY_STATUSES,
     ORDER_STATUS,
-    TERMINAL_DELIVERY_STATUSES,
     DeliveryStatus,
     OrderStatus,
 )
@@ -45,17 +45,68 @@ STATUS_TIMESTAMPS = {
 }
 
 
-def _notify_assigned_rider_of_cancellation(order):
-    """
-    Tell a rider still holding this order to stop.
+CANCELLED_DELIVERY_REASON = "Order cancelled"
 
-    Called for every cancellation, whoever triggered it. A rider whose
-    delivery is already delivered or failed is not disturbed.
+
+def _close_delivery_on_cancel(order):
     """
-    delivery = getattr(order, "delivery", None)
-    if delivery is None or delivery.status in TERMINAL_DELIVERY_STATUSES:
+    A cancelled order's open delivery is closed as failed, and the rider told
+    to stop.
+
+    Called for every cancellation, whoever triggered it (admin, customer, the
+    stale-order reaper), so the delivery leaves the rider's active list and
+    can no longer be picked up or marked delivered. A delivery that already
+    finished is not touched and its rider not disturbed.
+    """
+    delivery = (
+        Delivery.objects.select_for_update()
+        .select_related("rider__user")
+        .filter(order=order, status__in=ACTIVE_DELIVERY_STATUSES)
+        .first()
+    )
+    if delivery is None:
         return
+    delivery.status = DeliveryStatus.FAILED
+    delivery.failure_reason = CANCELLED_DELIVERY_REASON
+    delivery.failed_at = timezone.now()
+    delivery.save(update_fields=["status", "failure_reason", "failed_at"])
+    # Keep the cached relation in step for whoever reads order.delivery next.
+    order.delivery = delivery
     notify_rider_order_cancelled(order, delivery.rider)
+
+
+def assign_rider(order, serializer):
+    """
+    Assign the validated rider to a locked `order`, or hand an `assigned`
+    delivery over to them (AssignRiderSerializer decides which).
+
+    Shared by POST /api/admin/orders/{id}/assign/ and the Django admin, so
+    both follow one rule. Returns the delivery.
+    """
+    rider = serializer.validated_data["rider"]
+    earnings = serializer.rider_earnings()
+
+    if serializer.reassigning is None:
+        delivery = Delivery.objects.create(order=order, rider=rider, rider_earnings=earnings)
+        notify_rider_assigned(order, rider)
+        return delivery
+
+    delivery = (
+        Delivery.objects.select_for_update().select_related("rider__user").get(pk=serializer.reassigning.pk)
+    )
+    if delivery.status != DeliveryStatus.ASSIGNED:
+        # Picked up in the moment between validating and locking.
+        raise ValidationError(
+            {"error": f"{order.order_number} has just been picked up, so the rider can no longer be changed."}
+        )
+    previous = delivery.rider
+    delivery.rider = rider
+    delivery.rider_earnings = earnings
+    delivery.assigned_at = timezone.now()
+    delivery.save(update_fields=["rider", "rider_earnings", "assigned_at"])
+    notify_rider_assigned(order, rider)
+    notify_rider_unassigned(order, previous)
+    return delivery
 
 
 def _notify_assigned_rider_order_ready(order):
@@ -107,7 +158,7 @@ def apply_status_change(order, new_status, changed_by, reason="", notify_custome
     # order is off even when the customer cancelled it themselves and needs
     # no push of their own.
     if new_status == OrderStatus.CANCELLED:
-        _notify_assigned_rider_of_cancellation(order)
+        _close_delivery_on_cancel(order)
 
         # A paid online order is refunded. This only queues it; the gateway is
         # called after the cancel commits, so a rollback cannot refund a live
@@ -235,19 +286,14 @@ class AdminOrderViewSet(
             )
             serializer.is_valid(raise_exception=True)
 
-            rider = serializer.validated_data["rider"]
-            Delivery.objects.create(
-                order=order,
-                rider=rider,
-                rider_earnings=serializer.rider_earnings(),
-            )
-            notify_rider_assigned(order, rider)
+            created = serializer.reassigning is None
+            assign_rider(order, serializer)
 
         # No ETA here. A rider taking a batch will not set off for the first
         # order immediately, so an assignment-time figure would be wrong the
         # moment it was written. It is computed when the leg actually starts
         # — see the in_transit trigger in delivery/views.py.
-        return self._fresh_response(order, http.HTTP_201_CREATED)
+        return self._fresh_response(order, http.HTTP_201_CREATED if created else http.HTTP_200_OK)
 
 
 def dashboard_summary():

@@ -1,6 +1,7 @@
-/* Checkout: the delivery pin, picked on a full-screen map like the Android
-   app's "Pin delivery location" screen. Drag the pin or tap the map, check
-   the banner says it is inside the delivery area, then confirm.
+/* The delivery pin, picked on a full-screen map like the Android app's "Pin
+   delivery location" screen. Drag the pin or tap the map, check the banner
+   says it is inside the delivery area, then confirm. Used by checkout and by
+   Edit Profile (the saved location); only checkout has a fee and a button.
 
    Google Maps when the page has a browser key, OpenStreetMap otherwise, behind
    one small adapter so the rest does not care which. The delivery fee is then
@@ -9,8 +10,9 @@
 (function () {
     var config = JSON.parse(document.getElementById("map-config").textContent);
     var form = document.getElementById("checkout-form");
-    var latInput = document.getElementById("id_delivery_latitude");
-    var lngInput = document.getElementById("id_delivery_longitude");
+    var checkout = Boolean(form);
+    var latInput = document.getElementById(checkout ? "id_delivery_latitude" : "id_default_latitude");
+    var lngInput = document.getElementById(checkout ? "id_delivery_longitude" : "id_default_longitude");
     var feeEl = document.getElementById("fee");
     var feeLabel = document.getElementById("fee-label");
     var totalEls = document.querySelectorAll("[data-total]");
@@ -180,7 +182,7 @@
     document.getElementById("picker-confirm").addEventListener("click", function () {
         // Confirming outside the area is allowed, as in the app: the checkout
         // button and the server then say what to do.
-        setPin(draft, "Pinned on the map");
+        setPin(draft, checkout ? "Pinned on the map" : "Location saved");
         close(false);
     });
 
@@ -250,14 +252,17 @@
         latInput.value = fixed(pin[0]);
         lngInput.value = fixed(pin[1]);
         outside = distanceKm(config.center, pin) > config.radiusKm;
-        pinError.hidden = true;
         showPin(title);
+        if (!checkout) return;
+        pinError.hidden = true;
         label();
         quote();
     }
 
-    if (pin) setPin(pin, "Using your saved address");
+    if (pin) setPin(pin, checkout ? "Using your saved address" : "Location saved");
     else showPin();
+
+    if (!checkout) return;
 
     form.addEventListener("change", label);
     label();

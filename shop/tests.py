@@ -469,6 +469,40 @@ class AccountTests(ShopBase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(set(response.context["form"].errors), {"first_name", "phone"})
 
+    def test_edit_profile_has_the_map_pin_like_the_app(self):
+        self.customer.default_latitude = Decimal("7.009500")
+        self.customer.default_longitude = Decimal("125.090000")
+        self.customer.save()
+        self.sign_in()
+        response = self.client.get(reverse("shop:profile-edit"))
+        self.assertContains(response, "Set location on map")
+        self.assertContains(response, 'id="picker"')
+        self.assertContains(response, "map-picker.js")
+        self.assertEqual(response.context["map_config"]["pin"], [7.0095, 125.09])
+
+    def test_edit_profile_saves_the_map_pin(self):
+        self.sign_in()
+        data = {
+            "first_name": "Maria", "phone": "0917", "default_address": "Blue gate",
+            "default_latitude": "7.010000", "default_longitude": "125.091000",
+        }
+        response = self.client.post(reverse("shop:profile-edit"), data)
+        self.assertRedirects(response, reverse("shop:profile"), fetch_redirect_response=False)
+        self.customer.refresh_from_db()
+        self.assertEqual(
+            (self.customer.default_latitude, self.customer.default_longitude),
+            (Decimal("7.010000"), Decimal("125.091000")),
+        )
+
+    def test_edit_profile_refuses_half_a_pin(self):
+        self.sign_in()
+        data = {"first_name": "Maria", "phone": "0917", "default_latitude": "7.010000", "default_longitude": ""}
+        response = self.client.post(reverse("shop:profile-edit"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Set the location on the map again")
+        self.customer.refresh_from_db()
+        self.assertIsNone(self.customer.default_latitude)
+
 
 class PushTests(ShopBase):
     def register(self, token="web-tok-1"):

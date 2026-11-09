@@ -725,6 +725,7 @@ textarea.input { min-height: 0; resize: vertical; }
 /* -- delivery pin on checkout, and the full-screen picker ---------------------- */
 
 .pin-block { margin-top: 14px; }
+.fields > .pin-block, .fields > .pin-set { margin-top: 0; }  /* the grid's gap spaces them */
 .pin-btn {
     display: flex;
     align-items: center;

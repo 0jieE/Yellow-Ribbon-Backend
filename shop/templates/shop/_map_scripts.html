@@ -1,0 +1,7 @@
+{% load static %}{# Google Maps with the browser key, OpenStreetMap without one; then the picker. #}
+{% if google_maps_key %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key|urlencode }}&v=weekly" defer></script>
+{% else %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+{% endif %}
+<script src="{% static 'shop/js/map-picker.js' %}" defer></script>

@@ -11,6 +11,7 @@ without it: the delivery-pin map, live rider tracking and push notifications.
 
 import json
 import logging
+import math
 from functools import wraps
 
 from django.conf import settings
@@ -210,21 +211,30 @@ def checkout(request):
         "total": subtotal + fee,
         "store": store,
         "maya_enabled": bool(settings.MAYA_PUBLIC_KEY and settings.MAYA_SECRET_KEY),
-        "map_config": {
-            "center": [float(store.service_area_center_lat), float(store.service_area_center_lng)],
-            "radiusKm": store.radius_km,
-            "pin": (
-                [float(customer.default_latitude), float(customer.default_longitude)]
-                if customer.default_latitude is not None and customer.default_longitude is not None
-                else None
-            ),
-            "quoteUrl": reverse("orders:delivery-quote"),
-            "subtotal": str(subtotal),
-            "city": store.service_area_city,
-            "googleKey": bool(settings.GOOGLE_MAPS_BROWSER_KEY),
-        },
+        "map_config": _map_config(
+            store, customer.default_latitude, customer.default_longitude,
+            quoteUrl=reverse("orders:delivery-quote"), subtotal=str(subtotal),
+        ),
         "google_maps_key": settings.GOOGLE_MAPS_BROWSER_KEY,
     })
+
+
+def _map_config(store, lat, lng, **extra):
+    """What map-picker.js needs: the delivery area, and the pin if there is one."""
+    try:
+        pin = [float(lat), float(lng)] if lat not in (None, "") and lng not in (None, "") else None
+    except (TypeError, ValueError):
+        pin = None
+    if pin and not (math.isfinite(pin[0]) and math.isfinite(pin[1])):
+        pin = None
+    return {
+        "center": [float(store.service_area_center_lat), float(store.service_area_center_lng)],
+        "radiusKm": store.radius_km,
+        "pin": pin,
+        "city": store.service_area_city,
+        "googleKey": bool(settings.GOOGLE_MAPS_BROWSER_KEY),
+        **extra,
+    }
 
 
 # -- orders ------------------------------------------------------------------
@@ -441,6 +451,8 @@ def profile_edit(request):
             "last_name": user.last_name,
             "phone": user.phone,
             "default_address": customer.default_address,
+            "default_latitude": customer.default_latitude,
+            "default_longitude": customer.default_longitude,
         },
     )
     if request.method == "POST" and form.is_valid():
@@ -449,10 +461,24 @@ def profile_edit(request):
             setattr(user, field, data[field])
         user.save(update_fields=["first_name", "last_name", "phone"])
         customer.default_address = data["default_address"]
-        customer.save(update_fields=["default_address"])
+        customer.default_latitude = data["default_latitude"]
+        customer.default_longitude = data["default_longitude"]
+        customer.save(update_fields=["default_address", "default_latitude", "default_longitude"])
         messages.success(request, "Profile updated")
         return redirect("shop:profile")
-    return render(request, "shop/profile_edit.html", {"form": form})
+
+    # After a refused save, keep the pin that was just set on the map.
+    source = request.POST if form.is_bound else {
+        "default_latitude": customer.default_latitude,
+        "default_longitude": customer.default_longitude,
+    }
+    return render(request, "shop/profile_edit.html", {
+        "form": form,
+        "map_config": _map_config(
+            StoreSettings.load(), source.get("default_latitude"), source.get("default_longitude")
+        ),
+        "google_maps_key": settings.GOOGLE_MAPS_BROWSER_KEY,
+    })
 
 
 # -- push notifications ------------------------------------------------------

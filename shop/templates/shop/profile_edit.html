@@ -2,12 +2,16 @@
 
 {% block title %}Edit Profile{% endblock %}
 
+{% block head %}
+{% if not google_maps_key %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">{% endif %}
+{% endblock %}
+
 {% block body_class %}{% endblock %}
 {% block leading %}<a class="icon-btn back" href="{% url 'shop:profile' %}" aria-label="Back to my profile"><span class="ms" aria-hidden="true">arrow_back</span></a>{% endblock %}
 {% block appbar_title %}Edit Profile{% endblock %}
 
 {% block content %}
-<form method="post" class="stack">
+<form method="post" class="stack" id="profile-form">
     {% csrf_token %}
     <section class="card">
         <h2 class="section-title">Your details</h2>
@@ -27,9 +31,20 @@
     <section class="card">
         <h2 class="section-title">Default delivery location</h2>
         <div class="fields">
-        <p class="card-text">Used to prefill checkout. The map pin is saved when you tick "Save as my default delivery location" at checkout.</p>
+        <p class="card-text">Used to prefill checkout. Saving a location here means you do not have to pin one every time you order.</p>
         <label class="field"><span class="field-label">Address</span>{{ form.default_address }}
             {% for e in form.default_address.errors %}<span class="field-error">{{ e }}</span>{% endfor %}</label>
+
+        {# As in the app: a button until a pin is saved, then where it is and "Change". #}
+        <div class="pin-block" id="pin-empty">
+            <button type="button" class="pin-btn" data-picker-open><span class="ms" aria-hidden="true">add_location_alt</span>Set location on map</button>
+        </div>
+        <div class="pin-set" id="pin-set" hidden>
+            <span class="ms fill" id="pin-icon" aria-hidden="true">place</span>
+            <span class="pin-text"><strong id="pin-title">Location saved</strong><span id="pin-coords"></span></span>
+            <button type="button" class="pin-change" data-picker-open>Change</button>
+        </div>
+        {{ form.default_latitude }}{{ form.default_longitude }}
         </div>
     </section>
 
@@ -46,6 +61,10 @@
 
     <button type="submit" class="btn">SAVE CHANGES</button>
 </form>
+
+{% include "shop/_picker.html" with picker_back="Back to edit profile" %}
 {% endblock %}
 
 {% block bottom %}{% endblock %}
+
+{% block scripts %}{% include "shop/_map_scripts.html" %}{% endblock %}

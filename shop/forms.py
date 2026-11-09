@@ -92,3 +92,21 @@ class ProfileForm(forms.Form):
         label="Address", max_length=255, required=False,
         widget=forms.Textarea(attrs=_input("House number, street, landmark", rows=2, autocomplete="street-address")),
     )
+    # The saved map pin, set with the same picker as checkout. Optional, but
+    # never only half of it.
+    default_latitude = forms.DecimalField(
+        max_digits=9, decimal_places=6, required=False, min_value=-90, max_value=90, widget=forms.HiddenInput
+    )
+    default_longitude = forms.DecimalField(
+        max_digits=9, decimal_places=6, required=False, min_value=-180, max_value=180, widget=forms.HiddenInput
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.errors.get("default_latitude") or self.errors.get("default_longitude") or (
+            (cleaned.get("default_latitude") is None) != (cleaned.get("default_longitude") is None)
+        ):
+            self.errors.pop("default_latitude", None)
+            self.errors.pop("default_longitude", None)
+            raise forms.ValidationError("Set the location on the map again, then save.")
+        return cleaned

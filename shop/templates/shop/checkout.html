@@ -86,26 +86,7 @@
     {% endif %}
 </form>
 
-{{ map_config|json_script:"map-config" }}
-
-<div class="picker" id="picker" role="dialog" aria-modal="true" aria-labelledby="picker-title" hidden>
-    <header class="appbar">
-        <button type="button" class="icon-btn back" data-picker-close aria-label="Back to checkout"><span class="ms" aria-hidden="true">arrow_back</span></button>
-        <h2 class="appbar-title" id="picker-title">Pin delivery location</h2>
-    </header>
-    <div class="picker-body">
-        <div class="picker-map" id="picker-map" aria-label="Map: drag the pin or tap where to deliver"></div>
-        <div class="zone" id="zone" aria-live="polite"><span class="ms fill" aria-hidden="true">check_circle</span><p></p></div>
-        <div class="picker-controls">
-            <button type="button" class="fab-ext" id="locate"><span class="ms" aria-hidden="true">my_location</span>Centre on my location</button>
-            <div class="picker-card">
-                <p class="picker-coords" id="picker-coords"></p>
-                <p class="picker-hint">Tap the map or drag the pin to adjust.</p>
-                <button type="button" class="btn btn--amber btn--login" id="picker-confirm">Confirm location</button>
-            </div>
-        </div>
-    </div>
-</div>
+{% include "shop/_picker.html" with picker_back="Back to checkout" %}
 {% endblock %}
 
 {% block bottom %}
@@ -117,11 +98,4 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
-{% if google_maps_key %}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key|urlencode }}&v=weekly" defer></script>
-{% else %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-{% endif %}
-<script src="{% static 'shop/js/map-picker.js' %}" defer></script>
-{% endblock %}
+{% block scripts %}{% include "shop/_map_scripts.html" %}{% endblock %}
